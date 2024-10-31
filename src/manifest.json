@@ -1,0 +1,31 @@
+{
+    "name": "Optimizely Web Transfer Changes",
+    "version": "1.0",
+    "description": "Adds the ability to transfer changes when changing targeting",
+    "manifest_version": 3,
+    "author": "Grant Matthews",
+    "content_scripts": [
+        {
+            "matches": [
+                "https://app.optimizely.com/*"
+            ],
+            "js": [
+                "inject.js"
+            ],
+            "css": [
+                "style.css"
+            ]
+        }
+    ],
+    "host_permissions": [
+        "https://app.optimizely.com/*",
+        "https://api.app.optimizely.com/*"
+    ],
+    "permissions": [
+        "webRequest",
+        "storage"
+    ],
+    "background": {
+        "service_worker": "serviceWorker.js"
+    }
+}
