@@ -38,11 +38,21 @@ async function fetchAuthorizationFromSessionStorage() {
             resolve(result.authorization);
         });
     });
-    return ({
-        message: "Authorization Fetched",
-        success: true,
-        object: authorization
-    });
+
+    if (authorization) {
+        return ({
+            message: "Authorization Fetched",
+            success: true,
+            object: authorization
+        });
+    }
+    else {
+        return ({
+            message: "Authorization Not Found",
+            success: false,
+            object: {}
+        });
+    }
 };
 
 async function fetchWebExperimentConfig(experimentID, authorization) {
@@ -189,7 +199,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
     //Main Code Block
     //each step needs to complete successfully, if a step fails, reverse the changes made in the previous steps and tell the page
-    
+
     //getting the authorization from session storage
     var authorization = fetchAuthorizationFromSessionStorage();
     authorization.then(auth => {
@@ -227,7 +237,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                         currentStatus = 'pause';
                     }
                     //changing the targeting of the experiment from URL Targeting the Page Targeting
-                    //we SHOULD be able to keep executing without waiting for the response
                     var changeTargetingSuccess = postWebChangeToExperiment({
                         experimentID: experimentID,
                         action: currentStatus,
@@ -235,198 +244,125 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                             "page_ids": allPages
                         })
                     }, auth.object);
-
-                    //modifying the config variations
-                    if (pages.length == 0) {
-                        //no changes to apply to pages
-
-                        log({
-                            type: 'debug',
-                            content: 'No Page Rules Selected to transfer changes to'
-                        });
+                    changeTargetingSuccess.then(response => {
+                        //checking to make sure the targeting change was successful
                         
-                        sendResponse({
-                            message: 'No Page Rules Selected to transfer changes to',
-                            success: true
-                        });
-                    }
-                    else {
-                        //changes to apply to pages
-                        
-                        //getting current variations changes
-                        currentVariations = currentConfig.variations;
-                        
-                        currentVariations.forEach(variation => {
-                            //adding the changes from each variation to the pages selected
-
-                            log({
-                                type: 'debug',
-                                content: 'Transferring Changes from Variation ' + variation.id + ' to Pages'
-                            });
-
-                            //variation will have only one action array since it was configured for URL targeting
-                            if (variation.actions.length == 1) {
-                                //copying the actions array and adding it back to the changes for each specified page rule
-                                currentAction = deepCopy(variation.actions[0]);
-                                delete currentAction.share_link;
-                                currentAction.changes.forEach(change => {
-                                    delete change.id;
-                                });
-                                actions = [];
-
-                                pages.forEach(page => {
-                                    currentAction.page_id = page;
-                                    actions.push(deepCopy(currentAction));
-                                });
-                                variation.actions = actions;
-                            }
-                            else {
-                                //no changes in variation
-                                log({
-                                    type: 'debug',
-                                    content: 'No Changes in Variation ' + variation.id
-                                });
-                            }
-                        });
-
-                        log({
-                            type: 'debug',
-                            content: 'Posting Changes to Experiment ' + experimentID
-                        });
-
-                        //sending the changes back to the experiment
-                        var changeVariationsSuccess = postWebChangeToExperiment({
-                            experimentID: experimentID,
-                            action: currentStatus,
-                            body: JSON.stringify({
-                                "variations": currentVariations
-                            })
-                        }, auth.object);
-                        changeVariationsSuccess.then(response => {
-                            if (response.success) {
+                        if (response.success) {
+                            //modifying the config variations
+                            if (pages.length == 0) {
+                                //no changes to apply to pages
 
                                 log({
                                     type: 'debug',
-                                    content: 'Changes Transfered'
+                                    content: 'No Page Rules Selected to transfer changes to'
                                 });
 
                                 sendResponse({
-                                    message: 'Changes Transfered',
+                                    message: 'No Page Rules Selected to transfer changes to',
                                     success: true
                                 });
                             }
                             else {
+                                //changes to apply to pages
+
+                                //getting current variations changes
+                                currentVariations = currentConfig.variations;
+
+                                currentVariations.forEach(variation => {
+                                    //adding the changes from each variation to the pages selected
+
+                                    log({
+                                        type: 'debug',
+                                        content: 'Transferring Changes from Variation ' + variation.id + ' to Pages'
+                                    });
+
+                                    //variation will have only one action array since it was configured for URL targeting
+                                    if (variation.actions.length == 1) {
+                                        //copying the actions array and adding it back to the changes for each specified page rule
+                                        currentAction = deepCopy(variation.actions[0]);
+                                        delete currentAction.share_link;
+                                        currentAction.changes.forEach(change => {
+                                            delete change.id;
+                                        });
+                                        actions = [];
+
+                                        pages.forEach(page => {
+                                            currentAction.page_id = page;
+                                            actions.push(deepCopy(currentAction));
+                                        });
+                                        variation.actions = actions;
+                                    }
+                                    else {
+                                        //no changes in variation
+                                        log({
+                                            type: 'debug',
+                                            content: 'No Changes in Variation ' + variation.id
+                                        });
+                                    }
+                                });
 
                                 log({
-                                    type: 'error',
-                                    content: 'Error Transfering Experiment Changes: ' + response.message
+                                    type: 'debug',
+                                    content: 'Posting Changes to Experiment ' + experimentID
                                 });
-    
-                                sendResponse({
-                                    message:`
-                                        Error Transfering Experiment Changes\n
-                                        If this error continues, please share the following error message via GitHub: ` + response.message,
-                                    success: false
+
+                                //sending the changes back to the experiment
+                                var changeVariationsSuccess = postWebChangeToExperiment({
+                                    experimentID: experimentID,
+                                    action: currentStatus,
+                                    body: JSON.stringify({
+                                        "variations": currentVariations
+                                    })
+                                }, auth.object);
+                                changeVariationsSuccess.then(response => {
+                                    if (response.success) {
+
+                                        log({
+                                            type: 'debug',
+                                            content: 'Changes Transfered'
+                                        });
+
+                                        sendResponse({
+                                            message: 'Changes Transfered',
+                                            success: true
+                                        });
+                                    }
+                                    else {
+
+                                        log({
+                                            type: 'error',
+                                            content: 'Error Transfering Experiment Changes: ' + response.message
+                                        });
+
+                                        sendResponse({
+                                            message: response.message,
+                                            success: false
+                                        });
+                                    }
+                                }).catch(error => {
+
+                                    log({
+                                        type: 'error',
+                                        content: 'Error Transfering Experiment Changes: ' + error
+                                    });
+
+                                    sendResponse({
+                                        message: error,
+                                        success: false
+                                    });
                                 });
                             }
-                        }).catch(error => {
-
+                        }
+                        else {
                             log({
                                 type: 'error',
-                                content: 'Error Transfering Experiment Changes: ' + error
+                                content: 'Error Changing Experiment Targeting'
                             });
-
                             sendResponse({
-                                message:`
-                                    Error Transfering Experiment Changes\n
-                                    If this error continues, please share the following error message via GitHub: ` + error,
+                                message: response.message,
                                 success: false
                             });
-                        });
-                    }
-                    changeTargetingSuccess.then(response => {
-                        // if (response.success) {
-                        //     //modifying the config variations
-                        //     if (pages.length == 0) {
-                        //         //no changes to apply to pages
-                        //         sendResponse({
-                        //             message: 'No Pages Selected',
-                        //             success: true
-                        //         });
-                        //     }
-                        //     else {
-                        //         currentVariations = currentConfig.variations;
-                        //         console.log(currentVariations);
-                        //         currentVariations.forEach(variation => {
-                        //             console.log(variation);
-                        //             if (variation.actions.length == 1) {
-                        //                 currentAction = deepCopy(variation.actions[0]);
-                        //                 delete currentAction.share_link;
-                        //                 currentAction.changes.forEach(change => {
-                        //                     delete change.id;
-                        //                 });
-                        //                 actions = [];
-
-                        //                 pages.forEach(page => {
-                        //                     currentAction.page_id = page;
-                        //                     actions.push(deepCopy(currentAction));
-                        //                 });
-                        //                 variation.actions = actions;
-                        //             }
-                        //             else {
-                        //                 //no changes in variation
-                        //                 log({
-                        //                     type: 'debug',
-                        //                     content: 'No Changes in Variation'
-                        //                 });
-                        //             }
-                        //         });
-                        //         var changeVariationsSuccess = postWebChangeToExperiment({
-                        //             experimentID: experimentID,
-                        //             action: currentStatus,
-                        //             body: JSON.stringify({
-                        //                 "variations": currentVariations
-                        //             })
-                        //         }, auth.object);
-                        //         changeVariationsSuccess.then(response => {
-                        //             if (response.success) {
-                        //                 sendResponse({
-                        //                     message: 'Changes Posted',
-                        //                     success: true
-                        //                 });
-                        //             }
-                        //             else {
-                        //                 log({
-                        //                     type: 'error',
-                        //                     content: 'Error Changing Experiment Variations'
-                        //                 });
-                        //                 sendResponse({
-                        //                     message: 'Error Changing Experiment Variations',
-                        //                     success: false
-                        //                 });
-                        //             }
-                        //         }).catch(error => {
-                        //             log({
-                        //                 type: 'error',
-                        //                 content: 'Error Changing Experiment Variations: ' + error
-                        //             });
-                        //             sendResponse({
-                        //                 message: 'Error Changing Experiment Variations',
-                        //                 success: false
-                        //             });
-                        //         });
-                        //     }
-                        // }
-                        // else {
-                        //     log({
-                        //         type: 'error',
-                        //         content: 'Error Changing Experiment Targeting'
-                        //     });
-                        //     sendResponse({
-                        //         message: 'Error Changing Experiment Targeting',
-                        //         success: false
-                        //     });
-                        // }
+                        }
                         log({
                             type: 'debug',
                             content: 'Experiment Targeting Updated'
@@ -437,9 +373,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                             content: 'Error Changing Experiment Targeting: ' + error
                         });
                         sendResponse({
-                            message:`
-                                Error Changing Experiment Targeting\n
-                                If this error continues, please share the following error message via GitHub: ` + error,
+                            message: error,
                             success: false
                         });
                     });
@@ -450,11 +384,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                         type: 'error',
                         content: 'Error Fetching Experiment Config: ' + config.message
                     });
-    
+
                     sendResponse({
-                        message:`
-                            Error Fetching Experiment Configuration\n
-                            If this error continues, please share the following error message via GitHub: ` + config.message,
+                        message: config.message,
                         success: false
                     });
                 }
@@ -467,28 +399,29 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                 });
 
                 sendResponse({
-                    message:`
-                        Error Fetching Experiment Configuration\n
-                        If this error continues, please share the following error message via GitHub: ` + error,
+                    message: error,
                     success: false
                 });
             });
         }
         else {
             //fetchAuthorizationFromSessionStorage returned a value but it wasn't successful
-            
+
             log({
                 type: 'error',
                 content: 'Error Fetching Authorization'
             });
-            
             sendResponse({
-                message:`
+                message: `
                     Error Fetching Authorization\n
-                    This Extension Requires a Personal Access Token to Access the Optimizely API. The Extension scrapes network requests made by the Optimizely Web App to get a Personal Access Token (For more Information, see Extension Documentation)\n
+                    This Extension Requires a Personal Access Token to Access the Optimizely API. The Extension scrapes network requests made by the Optimizely Web App to get a Personal Access Token (For more Information, see Extension Documentation).\n
                     Please Visit a Page in the Web App that triggers a REST API Request (documentation) or Provide a Personal Access Token in the Extension Options Page (Coming Soon)\n`,
                 success: false
             });
+
+            console.log('Now Im here');
+
+            return false;
         }
     }).catch(error => {
         //fetchAuthorizationFromSessionStorage returned an error
@@ -497,15 +430,17 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             type: 'error',
             content: 'Error Fetching Authorization: ' + error
         });
-
         sendResponse({
-            message:`
+            message: `
                 Error Fetching Authorization\n
                 This Extension Requires a Personal Access Token to Access the Optimizely API. The Extension scrapes network requests made by the Optimizely Web App to get a Personal Access Token (For more Information, see Extension Documentation)\n
                 Please Visit a Page in the Web App that triggers a REST API Request (documentation) or Provide a Personal Access Token in the Extension Options Page (Coming Soon)\n`,
             success: false
         });
+
+        return false;
     });
+
     //tells the page to wait for a response
     return true;
 });
