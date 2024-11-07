@@ -1,4 +1,4 @@
-//-----------------Global Variables-----------------
+//-----------------Global Variables and Functions-----------------
 function deepCopy(obj) {
     if (obj === null || typeof obj !== 'object') {
         return obj;
@@ -16,19 +16,7 @@ function deepCopy(obj) {
     }
     return copy;
 }
-//----------End Global Variables----------
 
-//-------------------Logging Functions-------------------
-function log(message) {
-    var type = message.type;
-    if (type === 'error') {
-        console.error('[Service Worker]', message.content);
-    }
-    else {
-        console.log('[Service Worker]', message.content);
-    }
-}
-//-----------------End Logging Functions-----------------
 async function fetchAuthorizationFromSessionStorage() {
     authorization = await new Promise((resolve, reject) => {
         chrome.storage.session.get(['authorization'], (result) => {
@@ -162,21 +150,159 @@ async function postWebChangeToExperiment(postObject, authorization) {
         }
     }
 };
+//----------End Global Variables----------
+
+//-------------------Logging Functions-------------------
+function log(message) {
+    var type = message.type;
+    if (type === 'error') {
+        console.error('[Service Worker]', message.content);
+    }
+    else {
+        console.log('[Service Worker]', message.content);
+    }
+}
+//-----------------End Logging Functions-----------------
+
+//
+
+//----------------- Extension Functions -----------------
 
 
-//-----------------Main Code-----------------
-//---------- End Main Code----------
+function exportVariationChanges(message, sender, sendResponse) {
+    //collecting variables from the message
 
-//---------- Worker Functions----------
-//Message Listener for messages from the page. 
-//This is where the page tells the extension what to do.
-chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+    var experimentID = message.experimentID;
+    var variationID = message.variationID;
+    var firstChangeID = message.firstChangeID;
 
     log({
         type: 'debug',
-        content: 'Message Received: ' + message
+        content: 'Fetched Message Details Experiment ID: ' + experimentID
     });
 
+    var authorization = fetchAuthorizationFromSessionStorage();
+    authorization.then(auth => {
+        //authorization fetched
+        if (auth.success) {
+            //authorization fetched successfully
+            log({
+                type: 'debug',
+                content: 'Authorization Fetched: ' + auth.object
+            });
+
+            //fetching the experiment config from the Optimizely REST API
+            var experimentConfig = fetchWebExperimentConfig(experimentID, auth.object);
+            experimentConfig.then(config => {
+                //config fetched
+                if (config.success) {
+                    //config fetched successfully
+
+                    log({
+                        type: 'debug',
+                        content: 'Experiment Config Fetched: ' + config.object
+                    });
+
+                    var currentConfig = config.object;
+
+                    currentConfig.variations.forEach(variation => {
+                        if(variation.variation_id == variationID){
+                            variation.actions.forEach(action => {
+                                var foundAction = false;
+                                action.changes.forEach(change => {
+                                    console.log(change.id);
+                                    if(change.id.includes(firstChangeID)){
+                                        foundAction = true;
+                                        return false;
+                                    }
+                                });
+
+                                if(foundAction){
+                                    sendResponse({
+                                        message: action.changes,
+                                        success: true
+                                    });
+                                }
+                            });
+                        }
+                    });
+
+                    sendResponse({
+                        message: 'Unable to Find Changes',
+                        success: false
+                    });
+
+                }
+                else {
+                    //config fetch failed
+                    log({
+                        type: 'error',
+                        content: 'Error Fetching Experiment Config: ' + config.message
+                    });
+
+                    sendResponse({
+                        message: config.message,
+                        success: false
+                    });
+                }
+            }).catch(error => {
+                //fetching the experiment configuration returned an error
+
+                log({
+                    type: 'error',
+                    content: 'Error Fetching Experiment Config: ' + error
+                });
+
+                sendResponse({
+                    message: error,
+                    success: false
+                });
+            });
+        }
+        else {
+            //fetchAuthorizationFromSessionStorage returned a value but it wasn't successful
+
+            log({
+                type: 'error',
+                content: 'Error Fetching Authorization'
+            });
+            sendResponse({
+                message: `
+                    Error Fetching Authorization\n
+                    This Extension Requires a Personal Access Token to Access the Optimizely API. The Extension scrapes network requests made by the Optimizely Web App to get a Personal Access Token (For more Information, see Extension Documentation).\n
+                    Please Visit a Page in the Web App that triggers a REST API Request (documentation) or Provide a Personal Access Token in the Extension Options Page (Coming Soon)\n`,
+                success: false
+            });
+
+            return false;
+        }
+    }).catch(error => {
+        //fetchAuthorizationFromSessionStorage returned an error
+
+        log({
+            type: 'error',
+            content: 'Error Fetching Authorization: ' + error
+        });
+        sendResponse({
+            message: `
+                Error Fetching Authorization\n
+                This Extension Requires a Personal Access Token to Access the Optimizely API. The Extension scrapes network requests made by the Optimizely Web App to get a Personal Access Token (For more Information, see Extension Documentation)\n
+                Please Visit a Page in the Web App that triggers a REST API Request (documentation) or Provide a Personal Access Token in the Extension Options Page (Coming Soon)\n`,
+            success: false
+        });
+
+        return false;
+    });
+
+    //tells the page to wait for a response
+    return true;
+
+};
+
+
+
+
+function transferChanges(message, sender, sendResponse) {
     //collecting variables from the message
     var experimentID = message.experimentID;
 
@@ -419,8 +545,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                 success: false
             });
 
-            console.log('Now Im here');
-
             return false;
         }
     }).catch(error => {
@@ -443,6 +567,44 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
     //tells the page to wait for a response
     return true;
+};
+
+//---------- End Extension Functions----------
+
+//---------- Worker Functions----------
+//Message Listener for messages from the page. 
+//This is where the page tells the extension what to do.
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+
+    log({
+        type: 'debug',
+        content: 'Message Received: ' + message
+    });
+
+    if (message.type === 'transferChanges') {
+        //transfer changes message received
+        log({
+            type: 'debug',
+            content: 'Transfer Changes Message Received'
+        });
+
+        //transfer changes
+        return transferChanges(message, sender, sendResponse);
+    }
+
+    else if (message.type === 'exportVariationChanges') {
+        //export variation changes message received
+        log({
+            type: 'debug',
+            content: 'Export Variation Changes Message Received'
+        });
+
+        //export variation changes
+        return exportVariationChanges(message, sender, sendResponse);
+    }
+
+
+    
 });
 
 //Listens for requests to the Optimizely API. Saves the PAToken from the request to session storage
