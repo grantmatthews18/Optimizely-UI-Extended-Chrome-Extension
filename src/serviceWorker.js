@@ -171,7 +171,6 @@ function log(message) {
 
 function exportVariationChanges(message, sender, sendResponse) {
     //collecting variables from the message
-
     var experimentID = message.experimentID;
     var variationID = message.variationID;
     var firstChangeID = message.firstChangeID;
@@ -205,6 +204,8 @@ function exportVariationChanges(message, sender, sendResponse) {
 
                     var currentConfig = config.object;
 
+                    //iterating through the variations to find the anchor change firstChangeID
+                    //if the change is found, we know that is the correct page to export the changes too. Export the changes from that page
                     currentConfig.variations.forEach(variation => {
                         if(variation.variation_id == variationID){
                             variation.actions.forEach(action => {
@@ -217,7 +218,14 @@ function exportVariationChanges(message, sender, sendResponse) {
                                     }
                                 });
 
+                                //send the changes back to the page
                                 if(foundAction){
+
+                                    log({
+                                        type: 'info',
+                                        content: 'Found Changes, Sending Back to Page...'
+                                    });
+
                                     sendResponse({
                                         message: action.changes,
                                         success: true
@@ -225,6 +233,12 @@ function exportVariationChanges(message, sender, sendResponse) {
                                 }
                             });
                         }
+                    });
+                    //unable to find a page with a matching change to the anchor change
+
+                    log({
+                        type: 'error',
+                        content: 'Unable to Find Changes from Anchor Change'
                     });
 
                     sendResponse({
@@ -296,7 +310,6 @@ function exportVariationChanges(message, sender, sendResponse) {
 
     //tells the page to wait for a response
     return true;
-
 };
 
 
@@ -601,10 +614,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
         //export variation changes
         return exportVariationChanges(message, sender, sendResponse);
-    }
-
-
-    
+    }   
 });
 
 //Listens for requests to the Optimizely API. Saves the PAToken from the request to session storage
