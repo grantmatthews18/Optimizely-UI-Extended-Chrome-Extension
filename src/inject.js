@@ -118,7 +118,7 @@ function createErrorPopup(message) {
                         </h2>
                     </div>
                     <div class="lego-dialog__body" data-test-section="confirm-dialog-body">
-                        <p> ${message}</p>
+                        ${message}
                     </div>
                 </div>
             </div>
@@ -162,7 +162,7 @@ function createInfoPopup(message) {
                         </h2>
                     </div>
                     <div class="lego-dialog__body" data-test-section="confirm-dialog-body">
-                        <p> ${message}</p>
+                        ${message}
                     </div>
                 </div>
             </div>
@@ -546,6 +546,140 @@ window.optimizelyUIExtended.observeElementChanges('.sidenav__section__title.soft
                     content: 'Import Changes Button Clicked'
                 });
                 // Add your import changes logic here
+
+                //disabling button
+                //has to be done manually since element.disable=true doesn't for this UI button style
+                event.target.style.pointerEvents = 'none';
+                event.target.style.opacity = '0.5';
+
+                //variable to hold the matchType key in the message object
+                //this could be the first change ID (best), page name (good), page URL (okay) or (page name and URL) (worst)
+                var matchType;
+
+                //METHOD 1 of determining the current page
+                //getting list of elements representing each change in the current variation/page rule
+                var changesList = event.target.parentElement.parentElement.children[2];
+
+                //checking if there are any changes currently
+                if (changesList.children.length == 0) {
+                    //no changes in the current variation/page rule
+                    
+                    window.optimizelyUIExtended.log({
+                        type: 'debug',
+                        content: 'No Changes for Current Page Found'
+                    });
+
+                    //since no changes are found, we can't identify the page in this way
+
+                    //next we'll see if the Page Name/URL is unique
+                    var pageDropdown = document.querySelector('.lego-dropdown-group.flex--1.push--sides.background--white');
+
+                    //getting current page name and URL from dropdown
+                    var pageName = pageDropdown.querySelector('span.flex--1.truncate').innerHTML.split('\n')[0].trim();
+                    var pageURL = pageDropdown.querySelector('span.drop-filter-list__description.micro.push-half--left').title;
+
+                    //getting all of the page elements in the dropdown
+                    var allPageElements = pageDropdown.querySelectorAll('ul[data-test-section="view-list-container"] >li[data-test-section="view-list-item"]');
+
+                    var nameMatches = 0;
+                    var urlMatches = 0;
+                    var bothMatches = 0;
+
+                    //checking each page element to see if the name and URL match the current page
+                    //there should be ONE match if the page is unique, if there is more then one match, the page rule can't be determined
+                    allPageElements.forEach(element => {
+                        var name = element.querySelector('.drop-filter-list__text').innerHTML.split('\n')[0].trim();
+                        var url = element.querySelector('[data-test-section="view-list-item-url"]').innerHTML.split('\n')[1].trim();
+                        if(name === pageName){
+                            nameMatches++;
+                        }
+                        
+                        if(url === pageURL){
+                            urlMatches++;
+                        }
+
+                        if(name === pageName && url === pageURL){
+                            bothMatches++;
+                        }
+                    });
+
+                    if(nameMatches == 1){
+                        //able to match page by name only (easiset way to match)
+                        window.optimizelyUIExtended.log({
+                            type: 'debug',
+                            content: 'Page Identified by Name'
+                        });
+                        matchContent = pageName;
+                    }
+                    else if(urlMatches == 1){
+                        //able to match page by URL only
+                        window.optimizelyUIExtended.log({
+                            type: 'debug',
+                            content: 'Page Identified by URL'
+                        });
+                        matchContent = pageURL;
+                    }
+                    else if(bothMatches == 1){
+                        //able to match page by both name and URL
+                        window.optimizelyUIExtended.log({
+                            type: 'debug',
+                            content: 'Page Identified by Name and URL'
+                        });
+                        matchContent = {
+                            'name': pageName,
+                            'url': pageURL
+                        }
+                    }
+
+                    if(matches == 1){
+                        //unique page found
+                        window.optimizelyUIExtended.log({
+                            type: 'debug',
+                            content: 'Page Identified by Unique Name/URL'
+                        });
+
+                        //getting the ID of the unique page
+                        var pageID = pageDropdown.querySelector('li[data-test-section="view-list-item"]').getAttribute('data-test-section').split('-')[1];
+                    }
+
+                }
+                else {
+                    //there are changes in the current variation/page rule to export
+
+                    window.optimizelyUIExtended.log({
+                        type: 'debug',
+                        content: 'Changes Found'
+                    });
+
+                    //getting the ID of the first change in the list
+                    //this is used as an anchor change to determine which page rule changes are currently being looked at
+                    //there is no reference to the page ID on the page, so we have to use the first change ID as a reference
+                    var firstChangeID = changesList.children[0].getAttribute('data-table-row-id');
+                }
+
+                // creating a file input element
+                const fileInput = document.createElement('input');
+                fileInput.type = 'file';
+                fileInput.accept = 'application/json';
+
+                // adding change event listener to file input
+                fileInput.addEventListener('change', function (event) {
+                    const file = event.target.files[0];
+                    if (file) {
+                        const reader = new FileReader();
+                        reader.onload = function (e) {
+                            const jsonContent = JSON.parse(e.target.result);
+                            // store the parsed json content in a local variable
+                            var importedChanges = jsonContent;
+
+                            console.log(importedChanges);
+
+                        };
+                        reader.readAsText(file);
+                    }
+                });
+                // trigger the file input click event to open the file dialog
+                fileInput.click();
             });
         }
 
