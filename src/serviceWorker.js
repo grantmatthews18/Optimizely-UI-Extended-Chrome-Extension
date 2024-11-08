@@ -98,6 +98,61 @@ async function fetchWebExperimentConfig(experimentID, authorization) {
     }
 };
 
+async function fetchPageConfig(pageID, authorization) {
+    try {
+
+        const myHeaders = new Headers();
+        myHeaders.append("accept", "application/json");
+        myHeaders.append("authorization", authorization);
+        myHeaders.append("content-type", "application/json");
+
+        const options = {
+            method: 'GET',
+            headers: myHeaders
+        };
+
+        var breakCondition = false;
+        log({
+            type: 'debug',
+            content: 'Fetching Page ' + pageID + ' Config'
+        });
+        var pageConfig = await fetch('https://api.optimizely.com/v2/pages/' + pageID, options)
+            .then(response => {
+                if (response.status == 200) {
+                    log({
+                        type: 'debug',
+                        content: 'Page ' + pageID + ' Config Fetched via API'
+                    });
+                    return (response.json());
+                }
+                else {
+                    log({
+                        type: 'error',
+                        content: 'Failed to Fetch PAge ' + pageID + ' Config via API'
+                    });
+                    breakCondition = true;
+                }
+            })
+            .then(result => {
+                return (result)
+            })
+            .catch((error) => {
+                throw new Error(error);
+            });
+
+        if (breakCondition) {
+            throw new Error("Failed to Return Page " + pageID + " Config");
+        }
+        return ({
+            message: "Successfully Fetched Page " + pageID + " Config",
+            success: true,
+            object: pageConfig
+        });
+    } catch (error) {
+        throw new Error('Error Fetching Page Config: ' + error);
+    }
+};
+
 async function postWebChangeToExperiment(postObject, authorization) {
 
     try {
@@ -168,7 +223,6 @@ function log(message) {
 
 //----------------- Extension Functions -----------------
 
-
 function exportVariationChanges(message, sender, sendResponse) {
     //collecting variables from the message
     var experimentID = message.experimentID;
@@ -207,19 +261,19 @@ function exportVariationChanges(message, sender, sendResponse) {
                     //iterating through the variations to find the anchor change firstChangeID
                     //if the change is found, we know that is the correct page to export the changes too. Export the changes from that page
                     currentConfig.variations.forEach(variation => {
-                        if(variation.variation_id == variationID){
+                        if (variation.variation_id == variationID) {
                             variation.actions.forEach(action => {
                                 var foundAction = false;
                                 action.changes.forEach(change => {
                                     console.log(change.id);
-                                    if(change.id.includes(firstChangeID)){
+                                    if (change.id.includes(firstChangeID)) {
                                         foundAction = true;
                                         return false;
                                     }
                                 });
 
                                 //send the changes back to the page
-                                if(foundAction){
+                                if (foundAction) {
 
                                     log({
                                         type: 'info',
@@ -235,7 +289,6 @@ function exportVariationChanges(message, sender, sendResponse) {
                         }
                     });
                     //unable to find a page with a matching change to the anchor change
-
                     log({
                         type: 'error',
                         content: 'Unable to Find Changes from Anchor Change'
@@ -245,6 +298,278 @@ function exportVariationChanges(message, sender, sendResponse) {
                         message: 'Unable to Find Changes',
                         success: false
                     });
+                }
+                else {
+                    //config fetch failed
+                    log({
+                        type: 'error',
+                        content: 'Error Fetching Experiment Config: ' + config.message
+                    });
+
+                    sendResponse({
+                        message: config.message,
+                        success: false
+                    });
+                }
+            }).catch(error => {
+                //fetching the experiment configuration returned an error
+
+                log({
+                    type: 'error',
+                    content: 'Error Fetching Experiment Config: ' + error
+                });
+
+                sendResponse({
+                    message: error,
+                    success: false
+                });
+            });
+        }
+        else {
+            //fetchAuthorizationFromSessionStorage returned a value but it wasn't successful
+
+            log({
+                type: 'error',
+                content: 'Error Fetching Authorization'
+            });
+            sendResponse({
+                message: `
+                    Error Fetching Authorization\n
+                    This Extension Requires a Personal Access Token to Access the Optimizely API. The Extension scrapes network requests made by the Optimizely Web App to get a Personal Access Token (For more Information, see Extension Documentation).\n
+                    Please Visit a Page in the Web App that triggers a REST API Request (documentation) or Provide a Personal Access Token in the Extension Options Page (Coming Soon)\n`,
+                success: false
+            });
+
+            return false;
+        }
+    }).catch(error => {
+        //fetchAuthorizationFromSessionStorage returned an error
+
+        log({
+            type: 'error',
+            content: 'Error Fetching Authorization: ' + error
+        });
+        sendResponse({
+            message: `
+                Error Fetching Authorization\n
+                This Extension Requires a Personal Access Token to Access the Optimizely API. The Extension scrapes network requests made by the Optimizely Web App to get a Personal Access Token (For more Information, see Extension Documentation)\n
+                Please Visit a Page in the Web App that triggers a REST API Request (documentation) or Provide a Personal Access Token in the Extension Options Page (Coming Soon)\n`,
+            success: false
+        });
+
+        return false;
+    });
+
+    //tells the page to wait for a response
+    return true;
+};
+
+async function findPageIDs(experimentConfig, variationID, type, matchContent, authorization) {
+    if (type === 'id') {
+
+        var firstChangeID = matchContent;
+        var foundPageID = '';
+        //iterating through the variations to find the anchor change firstChangeID
+        //if the change is found, we know that is the correct page to export the changes too. Export the changes from that page
+        experimentConfig.variations.forEach(variation => {
+            if (variation.variation_id == variationID) {
+                variation.actions.forEach(action => {
+                    var foundAction = false;
+                    action.changes.forEach(change => {
+                        if (change.id.includes(firstChangeID)) {
+                            foundAction = true;
+                            return false;
+                        }
+                    });
+
+                    //send the changes back to the page
+                    if (foundAction) {
+
+                        log({
+                            type: 'debug',
+                            content: 'Matched ' + action.page_id
+                        });
+
+                        foundPageID = action.page_id;
+                        return false;
+                    }
+                });
+            }
+        });
+
+        return ({
+            message: 'Matched ' + foundPageID,
+            success: true,
+            object: [foundPageID]
+        });
+    }
+    else {
+        matchedPageIDs = [];
+
+        // Create an array of promises
+        const promises = experimentConfig.page_ids.map(async function (pageID) {
+            try {
+                const pageConfig = await fetchPageConfig(pageID, authorization);
+                if (pageConfig.success) {
+                    if (type === 'name' && pageConfig.object.name === matchContent.name) {
+                        matchedPageIDs.push(pageID);
+                    } else if (type === 'url' && pageConfig.object.edit_url === matchContent.url) {
+                        matchedPageIDs.push(pageID);
+                    } else if (type === 'pageAndURL' && pageConfig.object.name === matchContent.name && pageConfig.object.edit_url === matchContent.url) {
+                        matchedPageIDs.push(pageID);
+                    } else if (type === 'all' && pageConfig.object.name === matchContent.name && pageConfig.object.edit_url === matchContent.url) {
+                        matchedPageIDs.push(pageID);
+                    }
+                }
+            } catch (error) {
+                log({
+                    type: 'error',
+                    content: 'Error fetching page config: ' + error
+                });
+            }
+        });
+
+        // Use Promise.all to wait for all promises to resolve
+        await Promise.all(promises);
+
+        return {
+            message: 'Matched ' + matchedPageIDs.length + ' Page(s)',
+            success: true,
+            object: matchedPageIDs
+        };
+    }
+};
+
+function importVariationChanges(message, sender, sendResponse) {
+
+    //collecting variables from the message
+    var experimentID = message.experimentID;
+    var variationID = parseInt(message.variationID, 10);
+
+    log({
+        type: 'debug',
+        content: 'Fetched Message Details Experiment ID: ' + experimentID
+    });
+
+    var authorization = fetchAuthorizationFromSessionStorage();
+    authorization.then(auth => {
+        //authorization fetched
+        if (auth.success) {
+            //authorization fetched successfully
+            log({
+                type: 'debug',
+                content: 'Authorization Fetched: ' + auth.object
+            });
+
+            //fetching the experiment config from the Optimizely REST API
+            var experimentConfig = fetchWebExperimentConfig(experimentID, auth.object);
+            experimentConfig.then(config => {
+                //config fetched
+                if (config.success) {
+                    //config fetched successfully
+
+                    log({
+                        type: 'debug',
+                        content: 'Experiment Config Fetched: ' + config.object
+                    });
+
+                    //getting page ID(s) where the changes will be imported
+                    var pageIDs = findPageIDs(config.object, variationID, message.type.split('-')[1], message.matchContent, auth.object);
+                    pageIDs.then(pages => {
+                        //modifying the imported changes to remove the change ID
+                        //the change ID isn't needed and could interfere and cause issues if changes are imported on top of each other
+                        //to simplfy things, we'll let the API reassign new change IDs
+                        var importedChanges = message.changes;
+                        importedChanges.forEach(change => {
+                            delete change.id;
+                        });
+
+                        //extracting the variations object from the experiment config
+                        var variationsConfig = config.object.variations;
+
+                        //iterating through the variations to find the variation to import the changes to
+                        variationsConfig.forEach(variation => {
+                            //we do two things here
+                            //1. delete the share_link property from the all the action objects across both variations
+                            //2. add the imported changes to the action object of the varition and page we want to import the changes to
+
+                            variation.actions.forEach(action => {
+                                delete action.share_link;
+
+                                if (variation.variation_id === variationID && pages.object.includes(action.page_id)) {
+                                    //found the variation to import the changes to
+                                    //adding the changes to the variation
+                                    action.changes = action.changes.concat(importedChanges);
+                                }
+                            });
+                        });
+
+                        log({
+                            type: 'debug',
+                            content: ('Variation Object Created', variationsConfig)
+                        });
+
+                        //getting the current status of the experiment so the state of the experiment doesn't change when transfering changes
+                        var currentStatus = '';
+                        if (config.object.status === 'not_started' || config.object.status === 'paused') {
+                            currentStatus = 'pause';
+                        }
+                        else if (config.object.status === 'running') {
+                            currentStatus = 'resume';
+                        }
+                        else {
+                            currentStatus = 'pause';
+                        }
+
+                        //posting the changes back to the experiment
+                        var changeVariationsSuccess = postWebChangeToExperiment({
+                            experimentID: experimentID,
+                            action: currentStatus,
+                            body: JSON.stringify({
+                                "variations": variationsConfig
+                            })
+                        }, auth.object);
+                        changeVariationsSuccess.then(response => {
+                            if (response.success) {
+
+                                log({
+                                    type: 'debug',
+                                    content: 'Changes Imported'
+                                });
+
+                                sendResponse({
+                                    message: 'Changes Imported',
+                                    success: true
+                                });
+                            }
+                            else {
+
+                                log({
+                                    type: 'error',
+                                    content: 'Error Importing Experiment Changes: ' + response.message
+                                });
+
+                                sendResponse({
+                                    message: response.message,
+                                    success: false
+                                });
+                            }
+                        }).catch(error => {
+
+                            log({
+                                type: 'error',
+                                content: 'Error Importing Experiment Changes: ' + error
+                            });
+
+                            sendResponse({
+                                message: error,
+                                success: false
+                            });
+                        });
+                    }).catch(error => {
+                        console.log(error);
+                    });
+
 
                 }
                 else {
@@ -312,9 +637,6 @@ function exportVariationChanges(message, sender, sendResponse) {
     return true;
 };
 
-
-
-
 function transferChanges(message, sender, sendResponse) {
     //collecting variables from the message
     var experimentID = message.experimentID;
@@ -366,7 +688,7 @@ function transferChanges(message, sender, sendResponse) {
 
                     //getting the current status of the experiment so the state of the experiment doesn't change when transfering changes
                     var currentStatus = '';
-                    if (currentConfig.status === 'not_started' || config.status === 'paused') {
+                    if (currentConfig.status === 'not_started' || currentConfig.status === 'paused') {
                         currentStatus = 'pause';
                     }
                     else if (currentConfig.status === 'running') {
@@ -385,7 +707,7 @@ function transferChanges(message, sender, sendResponse) {
                     }, auth.object);
                     changeTargetingSuccess.then(response => {
                         //checking to make sure the targeting change was successful
-                        
+
                         if (response.success) {
                             //modifying the config variations
                             if (pages.length == 0) {
@@ -591,10 +913,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
     log({
         type: 'debug',
-        content: 'Message Received: ' + message
+        content: ('Message Received: ', message)
     });
 
-    if (message.type === 'transferChanges') {
+    //get first part of message type for multitype messages
+    var messageType = message.type.split('-')[0];
+
+    if (messageType === 'transferChanges') {
         //transfer changes message received
         log({
             type: 'debug',
@@ -605,7 +930,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         return transferChanges(message, sender, sendResponse);
     }
 
-    else if (message.type === 'exportVariationChanges') {
+    else if (messageType === 'exportVariationChanges') {
         //export variation changes message received
         log({
             type: 'debug',
@@ -614,7 +939,17 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
         //export variation changes
         return exportVariationChanges(message, sender, sendResponse);
-    }   
+    }
+    else if (messageType === 'importVariationChanges') {
+        //import variation changes message received
+        log({
+            type: 'debug',
+            content: 'Import Variation Changes Message Received'
+        });
+
+        //import variation changes
+        return importVariationChanges(message, sender, sendResponse);
+    }
 });
 
 //Listens for requests to the Optimizely API. Saves the PAToken from the request to session storage
