@@ -1,7 +1,7 @@
 {
-    "name": "Optimizely Web Transfer Changes",
+    "name": "Optimizely UI Extended",
     "version": "1.0",
-    "description": "Adds the ability to transfer changes when changing targeting",
+    "description": "Adds Additional UI Options in the Optimizely Web Experimentation Platform Web App.",
     "manifest_version": 3,
     "author": "Grant Matthews",
     "content_scripts": [
@@ -27,5 +27,15 @@
     ],
     "background": {
         "service_worker": "serviceWorker.js"
+    },
+    "action": {
+    "default_popup": "menu.html",
+    "default_icon": {
+        "16":"icons/icon16.png",
+        "32":"icons/icon32.png",
+        "48":"icons/icon48.png",
+        "128":"icons/icon128.png"
     }
 }
+}
+

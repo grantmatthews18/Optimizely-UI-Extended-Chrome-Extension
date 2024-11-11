@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Extension Menu</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            width: 500px;
+        }
+        .menu {
+            max-width: 500px;
+            margin: 0 auto;
+        }
+        .menu-item {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 10px;
+        }
+        .important {
+            color: red;
+        }
+        #menu-error-box {
+            display: none;
+        }
+        #tokenLabel>*{
+            display: inline;
+        }
+        
+    </style>
+    <script src="menu.js"></script>
+</head>
+<body>
+    <div class="menu">
+        <h2>Optimizely UI Extended Features</h2>
+        <p>Enable or Disable the injection of additional UI options in the Optimizely Experimentation Web App UI.</p>
+        <p class="important" id="menu-error-box"></p>
+        <div class="menu-item">
+            <label for="transferChanges">Import/Export/Delete Variation Changes</label>
+            <input class="menu-checkbox" type="checkbox" id="importExportDeleteChanges">
+        </div>
+        <div class="menu-item">
+            <label for="feature2">Transfer URL Targeting Changes to Page Rule(s)</label>
+            <input class="menu-checkbox" type="checkbox" id="transferChanges">
+        </div>
+        <div class="menu-item">
+            <label for="revertChanges">[BETA] Revert to Previous Experiment State</label>
+            <input class="menu-checkbox" type="checkbox" id="revertChanges">
+        </div>
+        <div class="menu-item">
+            <label for="apiToken" id="tokenLabel" style="width: 125px;">
+                <p>API Token</p>
+                <p id="tokenState" style="color: red;">[Not Set]</p>
+            </label>
+            <input type="password" id="apiToken" style="width: 250px;">
+            <button id="updateTokenButton">Update Token</button>
+        </div>
+        <div class="menu-item">
+            <label for="prioritizeScrape">Prioritize Scraped Token over Set Token</label>
+            <input class="menu-checkbox" type="checkbox" id="prioritizeScrape">
+        </div>
+        <p>Enable this if you'd prefer to prioritize scraped API Tokens over Set Token. Useful if you have access to multiple Optimizely Accounts. Prefered Setting for Internal Employees.</p>
+        <p class="important">Changes will take effect after refreshing the page.</p>
+    </div>
+
+</body>
+</html>
