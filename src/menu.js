@@ -35,6 +35,7 @@ document.addEventListener('DOMContentLoaded', (event) => {
             document.getElementById('transferChanges').checked = result.enabledFeatures.transferChanges;
             document.getElementById('revertChanges').checked = result.enabledFeatures.revertChanges;
             document.getElementById('prioritizeScrape').checked = result.enabledFeatures.prioritizeScrape;
+            document.getElementById('logLevel').value = result.enabledFeatures.logLevel;
 
             enabledFeatures = result.enabledFeatures;
 
@@ -60,6 +61,16 @@ document.addEventListener('DOMContentLoaded', (event) => {
                     type: 'info',
                     content: 'Enabled Features Updated in Local Storage'
                 });
+            });
+        });
+    });
+
+    document.getElementById('logLevel').addEventListener('change', (event) => {
+        enabledFeatures.logLevel = event.target.value;
+        chrome.storage.local.set({ "enabledFeatures": enabledFeatures }, function () {
+            log({
+                type: 'info',
+                content: 'Log Level Updated in Local Storage'
             });
         });
     });

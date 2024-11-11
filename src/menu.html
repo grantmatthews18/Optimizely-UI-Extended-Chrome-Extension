@@ -49,6 +49,7 @@
             <label for="revertChanges">[BETA] Revert to Previous Experiment State</label>
             <input class="menu-checkbox" type="checkbox" id="revertChanges">
         </div>
+        <hr style="border: 0; border-top: 1px solid #ccc; margin: 20px 0;">
         <div class="menu-item">
             <label for="apiToken" id="tokenLabel" style="width: 125px;">
                 <p>API Token</p>
@@ -62,6 +63,17 @@
             <input class="menu-checkbox" type="checkbox" id="prioritizeScrape">
         </div>
         <p>Enable this if you'd prefer to prioritize scraped API Tokens over Set Token. Useful if you have access to multiple Optimizely Accounts. Prefered Setting for Internal Employees.</p>
+        <hr style="border: 0; border-top: 1px solid #ccc; margin: 20px 0;">
+        <div class="menu-item">
+            <label for="debugMode">Log Level</label>
+            <select id="logLevel">
+                <option value="all">All</option>
+                <option value="debug">Debug</option>
+                <option value="info">Info</option>
+                <option value="error">Error</option>
+                <option value="off">Off</option>
+            </select>
+        </div>
         <p class="important">Changes will take effect after refreshing the page.</p>
     </div>
 

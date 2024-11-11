@@ -105,6 +105,47 @@ async function fetchAuthorizationFromStorage() {
     }
 };
 
+async function fetchWebHistory(experimentID, projectID, authorization) {
+
+    const myHeaders = new Headers();
+    myHeaders.append("accept", "application/json");
+    myHeaders.append("authorization", authorization);
+
+    const requestOptions = {
+        method: "GET",
+        headers: myHeaders,
+        redirect: "follow"
+    };
+
+    const baseURL = 'https://api.optimizely.com/v2/changes?all_entities=false&per_page=50&project_id=' + projectID + '&entity=experiment:' + experimentID;
+    var changes = []
+    var pageNum = 1;
+
+    while (true) {
+        let response = await fetch(baseURL + "&page=" + pageNum, requestOptions);
+
+        if (response.status == 200) {
+            let result = response.json();
+            changes = changes.concat(result);
+            pageNum += 1;
+        }
+        else {
+            if (pageNum == 1) {
+                throw new Error("Failed to Fetch Experiment History");
+            }
+            else {
+                break;
+            }
+        };
+    };
+
+    if (changes.length <= 0) {
+        throw new Error("No Changes Found for Experiment " + experimentID);
+    };
+
+    return (changes);
+}
+
 async function fetchWebExperimentConfig(experimentID, authorization) {
     const myHeaders = new Headers();
     myHeaders.append("accept", "application/json");
@@ -212,6 +253,860 @@ function log(message) {
 //
 
 //----------------- Extension Functions -----------------
+//Helper Function for revertWebChanges -> deconstructs a variation list into a variationDict
+function deconstructWebVariationList(variationsList) {
+    var variationsDict = {};
+
+    variationsList.forEach((variation) => {
+
+        variationsDict[variation.variation_id] = variation;
+
+        variationsDict[variation.variation_id].pages = {};
+
+        variation.actions.forEach((page) => {
+            var pageId = page.page_id;
+            var pageChanges = page.changes;
+
+            var changes = {};
+
+            pageChanges.forEach((change) => {
+                changes[change.id] = change;
+            });
+
+            variationsDict[variation.variation_id].pages[pageId] = changes;
+        });
+
+        delete variationsDict[variation.variation_id].actions;
+    });
+    return variationsDict;
+};
+
+//Helper Function for revertWebChanges -> reconstructs the variationDict into a list readable by the Optimizely API
+function reconstructWebVariationDict(variationsDict) {
+    var variationsList = [];
+
+    Object.keys(variationsDict).forEach((variationID) => {
+        var actionsList = [];
+        Object.keys(variationsDict[variationID].pages).forEach((pageID) => {
+            var changesList = [];
+            Object.keys(variationsDict[variationID].pages[pageID]).forEach((changeID) => {
+                changesList.push(variationsDict[variationID].pages[pageID][changeID]);
+            });
+
+            var pageAction = {
+                page_id: parseInt(pageID, 10),
+                changes: changesList
+            };
+
+            actionsList.push(pageAction);
+        });
+
+        var variation = variationsDict[variationID];
+        variation.actions = actionsList;
+        delete variation.pages;
+        variationsList.push(variation);
+    });
+    return variationsList;
+};
+
+//Helper Function for revertWebChanges -> reverts a single web experiment change
+function revertWebChange(propertyDict, changeObj) {
+
+    log({
+        type: 'debug',
+        content: 'Reverting Change ' + changeObj.id
+    });
+    //iterate over each change array in the history key
+
+    changeObj.changes.forEach((change) => {
+
+        //check the type of change
+
+        if (change.property === 'variations') {
+            //before and after are partial variation maps containing only changed parts of variation
+            var beforeVariations = deconstructWebVariationList(change.before);
+            var afterVariations = deconstructWebVariationList(change.after);
+
+            //check if all variaitons are in both befores and afters
+            //if variaiton is missing in after, variation was deleted.
+            //variations can't be restored, warn that this change can not be undone
+            //if variation is missing in before, variation was added
+            //delete variation, warn that this cannot be undone
+            //if variations match
+            //check that pages match
+            //they should since modifying page settings is a different property
+            //if the pages don't match
+            //throw an error, idk what to do here
+            //if the pages match
+            //check if before and after both have change ID
+            //if they do, change was modify. so find change in propdict and set it to before value
+            //if before exists but not after, change was deleted. so add before change to propdict
+            //if after exists but not before, change was created. so delete change from propdict
+
+            var beforeVariationsIDs = Object.keys(beforeVariations);
+            var afterVariationsIDs = Object.keys(afterVariations);
+
+            beforeVariationsIDs.forEach((beforeVariationID) => {
+                //checking that all variations in before exist in after
+                if (!afterVariationsIDs.includes(beforeVariationID)) {
+                    //before variation is missing after
+                    //means variation was deleted
+                    propertyDict.revertToExperiment = false;
+                    propertyDict.reasons.push('Variation ' + beforeVariationID + ' was Stopped. Variations Cannot be Restarted.');
+
+                    //adding variation to propertyDict
+                    propertyDict.variations[beforeVariationID] = beforeVariations[beforeVariationID];
+
+                    //before variation has been handled, removing from beforeVariations
+                    delete beforeVariations[beforeVariationID];
+                }
+            });
+
+            afterVariationsIDs.forEach((afterVariationID) => {
+                //checking that all variations in after exist in before
+                if (!beforeVariationsIDs.includes(afterVariationID)) {
+                    //after variation is missing before
+                    //means variation was added
+                    propertyDict.warnings.push('Variation ' + afterVariationID + ' was Added. Reverting will Stop the Variation Permanently.');
+
+                    //deleting variation from propertyDict
+                    delete propertyDict.variations[afterVariationID];
+
+                    //after variation has been handled, removing from afterVariations
+                    delete afterVariations[afterVariationID];
+                };
+            });
+
+            //updating variations from before/after that still have to be handled
+            beforeVariationsIDs = Object.keys(beforeVariations);
+            afterVariationsIDs = Object.keys(afterVariations);
+
+            if (!arraysHaveSameValues(beforeVariationsIDs, afterVariationsIDs)) {
+                //throw error if before, after, and current variations don't match
+                throw new Error('Before, and After Do Not Have the same Variations (after variation add/delete handling).');
+            };
+
+            beforeVariationsIDs.forEach((variationID) => {
+
+                var beforePages = beforeVariations[variationID].pages;
+                var afterPages = afterVariations[variationID].pages;
+
+                var beforePagesIDs = Object.keys(beforePages);
+                var afterPagesIDs = Object.keys(afterPages);
+
+                beforePagesIDs.forEach((beforePageID) => {
+                    //checking that all pages in before exist in after
+                    if (!afterPagesIDs.includes(beforePageID)) {
+                        //before page is missing after
+                        //means page was deleted or all changes from page were deleted.
+
+                        //adding page to propertyDict
+                        propertyDict.variations[variationID].pages[beforePageID] = beforePages[beforePageID];
+
+                        //before page has been handled, removing from beforePages
+                        delete beforePages[beforePageID];
+                    }
+                });
+
+                afterPagesIDs.forEach((afterPageID) => {
+                    //checking that all pages in after exist in before
+                    if (!beforePagesIDs.includes(afterPageID)) {
+                        //after page is missing before
+                        //means page was added or all changes were added to page
+                        //deleting page from propertyDict
+                        delete propertyDict.variations[variationID].pages[afterPageID];
+
+                        //after page has been handled, removing from afterPages
+                        delete afterPages[afterPageID];
+                    }
+                });
+
+                beforePagesIDs = Object.keys(beforePages);
+                afterPagesIDs = Object.keys(afterPages);
+
+                if (!arraysHaveSameValues(beforePagesIDs, afterPagesIDs)) {
+                    //throw error if before, after, and current variations don't match
+                    throw new Error('Before, and After Do Not Have the same Pages (after Page add/delete handling).');
+                };
+
+                beforePagesIDs.forEach((pageID) => {
+                    var beforeChanges = beforePages[pageID];
+                    var afterChanges = afterPages[pageID];
+
+                    var beforeChangesIDs = Object.keys(beforeChanges);
+                    var afterChangesIDs = Object.keys(afterChanges);
+
+                    beforeChangesIDs.forEach((beforeChangeID) => {
+                        //checking that all changes in before exist in after
+                        if (!afterChangesIDs.includes(beforeChangeID)) {
+                            //before change is missing after
+                            //means change was deleted
+                            //adding change to propertyDict
+                            propertyDict.variations[variationID].pages[pageID][beforeChangeID] = beforeChanges[beforeChangeID];
+
+                            //before change has been handled, removing from beforeChanges
+                            delete beforeChanges[beforeChangeID];
+                        }
+                    });
+
+                    afterChangesIDs.forEach((afterChangeID) => {
+                        //checking that all changes in after exist in before
+                        if (!beforeChangesIDs.includes(afterChangeID)) {
+                            //after change is missing before
+                            //means change was added
+                            //deleting change from propertyDict
+                            delete propertyDict.variations[variationID].pages[pageID][afterChangeID];
+
+                            //after change has been handled, removing from afterChanges
+                            delete afterChanges[afterChangeID];
+                        }
+                    });
+
+                    beforeChangesIDs = Object.keys(beforeChanges);
+                    afterChangesIDs = Object.keys(afterChanges);
+
+                    if (!arraysHaveSameValues(beforeChangesIDs, afterChangesIDs)) {
+                        //throw error if before, after, and current variations don't match
+                        throw new Error('Before, and After Do Not Have the same Changes (after Change add/delete handling).');
+                    };
+
+                    beforeChangesIDs.forEach((changeID) => {
+                        propertyDict.variations[variationID].pages[pageID][changeID] = beforeChanges[changeID];
+                    });
+                });
+            });
+        }
+        else if (change.property === 'page_ids' || change.property === 'url_targeting') {
+            if (change.after && change.before) {
+                //change was an update, swap property to before
+                propertyDict[change.property] = change.before;
+            }
+            else {
+                //change was switching from page IDs to URL targeting (or vice versa)
+                //first, clear all previous targeting updates from Q
+                propertyDict.targetingChanged = true;
+
+                if (change.after) {
+                    //change was delete targeting type, set targeting type to nothing
+                    propertyDict[change.property] = undefined;
+                }
+                else if (change.before) {
+                    //change was switch from targeting type, set targeting type to before
+                    propertyDict[change.property] = change.before;
+                }
+                else {
+                    throw new Error('No Before or After Targeting found');
+                }
+            }
+        }
+        else {
+            //change was a simple property change
+            propertyDict[change.property] = change.before;
+        }
+    });
+
+    return propertyDict;
+};
+
+async function revertWebChanges(message, sender, sendResponse) {
+
+    var tabId = sender.tab.id;
+
+    const messageComponents = message.type.split('-');
+
+    if (messageComponents[1] === 'init') {
+        //initializing the revertWebChanges process
+        //parse the message content for needed information
+        try {
+            log({
+                type: 'debug',
+                content: ('Parsing Message Content: ', message)
+            });
+
+            //getting change info from message
+            var requestID = message.uuid;
+            var changeID = message.changeID;
+            var experimentID = message.experimentID;
+            var projectID = message.projectID;
+
+            log({
+                type: 'debug',
+                content: 'Recieved Change ' + changeID + ' for Experiment/Project ' + experimentID + '/' + projectID
+            });
+
+            sendResponse({
+                message: 'Initialization Successful',
+                success: true
+            });
+
+        } catch (error) {
+            log({
+                type: 'error',
+                content: ('Error Parsing Message Content: ', error)
+            });
+            sendResponse({
+                message: error,
+                success: false
+            });
+        }
+
+        //Main Code Block
+        //each step needs to complete successfully, if a step fails, reverse the changes made in the previous steps and tell the page
+
+        //getting the authorization from session storage
+        try {
+
+            log({
+                type: 'debug',
+                content: 'Fetching Authorization'
+            });
+
+            var [authorization, features] = await Promise.all([fetchAuthorizationFromStorage(), fetchFeaturesFromStorage()]);
+
+            if (authorization && features) {
+                log({
+                    type: 'debug',
+                    content: ('Authorization Fetched: ', authorization)
+                });
+                chrome.tabs.sendMessage(tabId, {
+                    type: "revertWebChange-statusUpdate",
+                    uuid: requestID,
+                    message: 'Authorization Fetched Successfully'
+                });
+            }
+            else {
+                throw new Error(authorization ? 'Features Not Found in Local Storage' : 'Authorization Not Found in Local or Session Storage');;
+            };
+
+
+        } catch (error) {
+            log({
+                type: 'error',
+                content: ('Error Fetching Authorization: ', error)
+            });
+            chrome.tabs.sendMessage(tabId, {
+                type: "revertWebChange-error",
+                uuid: requestID,
+                message: error
+            });
+
+            return false;
+        }
+
+        //fetching the experiment config from the Optimizely REST API
+        //also checking if the stored token is valid
+        try {
+
+            log({
+                type: 'debug',
+                content: 'Fetching Experiment Config'
+            });
+
+            var useScrape = features.prioritizeScrape;
+            var experimentConfig;
+            var sentResponse = false;
+
+            if (features.prioritizeScrape) {
+                try {
+                    experimentConfig = await fetchWebExperimentConfig(experimentID, authorization.scraped);
+                    if (experimentConfig) {
+                        log({
+                            type: 'debug',
+                            content: ('Experiment Config Fetched via Scraped Token: ', experimentConfig)
+                        });
+                        chrome.tabs.sendMessage(tabId, {
+                            type: "revertWebChange-statusUpdate",
+                            uuid: requestID,
+                            message: 'Experiment Config Fetched via Scraped Token'
+                        });
+                    }
+                } catch (error) {
+                    log({
+                        type: 'info',
+                        content: ('Error Fetching Experiment Config via Scraped Token: ', error)
+                    });
+                    log({
+                        type: 'debug',
+                        content: 'Attempting to Fetch Experiment Config via Stored Token'
+                    });
+                    useScrape = false;
+                    try {
+                        experimentConfig = await fetchWebExperimentConfig(experimentID, authorization.stored);
+                        if (experimentConfig) {
+                            log({
+                                type: 'debug',
+                                content: ('Experiment Config Fetched via Stored Token: ', experimentConfig)
+                            });
+                            chrome.tabs.sendMessage(tabId, {
+                                type: "revertWebChange-statusUpdate",
+                                uuid: requestID,
+                                message: 'Experiment Config Fetched via Stored Token'
+                            });
+                        }
+                    } catch (error) {
+                        sentResponse = true;
+                        chrome.tabs.sendMessage(tabId, {
+                            type: "revertWebChange-error",
+                            uuid: requestID,
+                            message: 'Error Fetching Authorization. You\'ve indicated that the extension should use a scraped token, but the scraped token couldn\'t be found or is invalid. Please visit a page in the Optimizely Web App that triggers a REST API request (See Extension Documentation on GitHub). Alternatively, provide a Personal Access Token in the extension options page for this account.'
+                        });
+                        throw new Error('Error Fetching Experiment Config via Stored Token: ', error);
+                    }
+                }
+            }
+            else {
+                try {
+                    var experimentConfig = await fetchWebExperimentConfig(experimentID, authorization.stored);
+                    if (experimentConfig) {
+                        log({
+                            type: 'debug',
+                            content: ('Experiment Config Fetched via Stored Token: ', experimentConfig)
+                        });
+                        chrome.tabs.sendMessage(tabId, {
+                            type: "revertWebChange-statusUpdate",
+                            uuid: requestID,
+                            message: 'Experiment Config Fetched via Stored Token'
+                        });
+                    }
+                } catch (error) {
+                    sentResponse = true;
+                    chrome.tabs.sendMessage(tabId, {
+                        type: "revertWebChange-error",
+                        uuid: requestID,
+                        message: 'Error Fetching Authorization. Stored Token is inavlid for this account. You\'ve indicated that the extension should use the stored Personal Access Token to Access the Optimizely API. Please disable use of the stored token or provide a valid Personal Access Token for this account.'
+                    });
+                    throw new Error('Error Fetching Experiment Config via Stored Token: ', error);
+                }
+            }
+        } catch (error) {
+            log({
+                type: 'error',
+                content: ('Error Fetching Experiment Config: ', error)
+            });
+            if (!sentResponse) {
+                chrome.tabs.sendMessage(tabId, {
+                    type: "revertWebChange-error",
+                    uuid: requestID,
+                    message: error
+                });
+            }
+            return false;
+        }
+
+        //at this point we know which API token we're using. We can fetch change history and modify the experiment config at the same time
+        //getting experiment history from the Optimizely REST API AND updating the experiment config
+        try {
+            var changesPromise = new Promise((resolve, reject) => {
+
+                log({
+                    type: 'debug',
+                    content: 'Fetching Experiment History'
+                });
+
+                var changes = fetchWebHistory(experimentID, projectID, useScrape ? authorization.scraped : authorization.stored).then((changes) => {
+                    if (!changes) {
+                        throw new Error('Failed to Fetch Experiment History');
+                    }
+                    else {
+                        chrome.tabs.sendMessage(tabId, {
+                            type: "revertWebChange-statusUpdate",
+                            uuid: requestID,
+                            message: 'Experiment History Fetched Successfully'
+                        });
+                    }
+    
+                    resolve(changes);
+                });
+
+                return(changes)
+            });
+
+            var configPromise = new Promise((resolve, reject) => {
+                log({
+                    type: 'debug',
+                    content: 'Buidling Property Dict for Experiment ' + experimentID
+                });
+
+                var propertyDict = {};
+
+                //adding a flag to the property dict to determine if targeting has been changed
+                //if it has, the targeting of the experiment has to be updated FIRST before any changes to variations are updated
+                propertyDict.targetingChanged = false;
+                //adding a flag to the property dict to determine if the changes can be reverted to the same experiment
+                propertyDict.revertToExperiment = true;
+                //adding a array to the property dict to hold warnings for revert
+                propertyDict.warnings = [];
+                //adding a array to the property dict to hold errors/reasons why revert to experiment isn't possible
+                propertyDict.reasons = [];
+                //adding the current experiment status to the property dict
+                if (experimentConfig.status === 'not_started' || experimentConfig.status === 'paused') {
+                    propertyDict.status = 'pause';
+                }
+                else if (experimentConfig.status === 'running') {
+                    propertyDict.status = 'resume';
+                }
+                else {
+                    propertyDict.status = 'pause';
+                }
+
+                log({
+                    type: 'debug',
+                    content: 'Current Experiment Status: ' + propertyDict.status
+                });
+
+                //handling simple properties
+                propertyDict['name'] = experimentConfig.name;
+                propertyDict['description'] = experimentConfig.description;
+                propertyDict['audience_conditions'] = experimentConfig.audience_conditions;
+                propertyDict['holdback'] = experimentConfig.holdback;
+                propertyDict['metrics'] = experimentConfig.metrics;
+                propertyDict['changes'] = experimentConfig.changes;
+                propertyDict['schedule'] = experimentConfig.schedule;
+                log({
+                    type: 'debug',
+                    content: 'Simple Properties of Experiment ' + experimentID + ' deconstructed'
+                });
+
+                //handling page and url targeting
+                if (experimentConfig.page_ids) {
+                    log({
+                        type: 'debug',
+                        content: 'Experiment ' + experimentID + ' is using Page Targeting'
+                    });
+                    propertyDict['page_ids'] = experimentConfig.page_ids;
+                    propertyDict['url_targeting'] = undefined;
+                }
+                else if (experimentConfig.url_targeting) {
+                    log({
+                        type: 'debug',
+                        content: 'Experiment ' + experimentID + ' is using URL Targeting'
+                    });
+                    propertyDict['page_ids'] = undefined;
+                    propertyDict['url_targeting'] = experimentConfig.url_targeting;
+                }
+                else {
+                    throw new Error('Experiment ' + experimentID + ' has both or neither Page and URL Targeting');
+                };
+                log({
+                    type: 'debug',
+                    content: 'Page/URL Targeting of Experiment ' + experimentID + ' deconstructed'
+                });
+
+                //handling variations
+                propertyDict.variations = deconstructWebVariationList(experimentConfig.variations);
+                log({
+                    type: 'debug',
+                    content: 'Variation Changes of Experiment ' + experimentConfig.id + ' deconstructed'
+                });
+
+                chrome.tabs.sendMessage(tabId, {
+                    type: "revertWebChange-statusUpdate",
+                    uuid: requestID,
+                    message: 'Experiment Config Deconstructed Successfully'
+                });
+
+                resolve(propertyDict);
+            });
+
+            var [changes, propertyDict] = await Promise.all([changesPromise, configPromise]);
+
+            if (!changes || !propertyDict) {
+                throw new Error('Failed to Fetch Experiment History or Update Experiment Config');
+            }
+        } catch (error) {
+            log({
+                type: 'error',
+                content: ('Error Fetching Experiment History/Updating Config: ', error)
+            });
+            chrome.tabs.sendMessage(tabId, {
+                type: "revertWebChange-error",
+                uuid: requestID,
+                message: error
+            });
+            return false;
+        }
+
+        //reverting to specified change
+        try {
+            for (let i = 0; i < changes.length; i++) {
+                const change = changes[i];
+                if (change.change_type == "update") {
+                    propertyDict = revertWebChange(propertyDict, change);
+
+                    if (!propertyDict) {
+                        throw new Error('Failed to Revert Change ' + change.id);
+                    }
+
+                    chrome.tabs.sendMessage(tabId, {
+                        type: "revertWebChange-statusUpdate",
+                        uuid: requestID,
+                        message: 'Change ' + change.id + ' Reverted Successfully'
+                    });
+                }
+                else {
+                    log({
+                        type: 'debug',
+                        content: 'Change ' + change.id + ' is not an Update, Skipping...'
+                    });
+                    chrome.tabs.sendMessage(tabId, {
+                        type: "revertWebChange-statusUpdate",
+                        uuid: requestID,
+                        message: 'Change ' + change.id + ' is not of type update, skipping'
+                    });
+                }
+
+                //if the change reverted is the one we are looking for, break the loop
+                if (change.id == parseInt(changeID, 10)) {
+                    break;
+                };
+            }
+        } catch (error) {
+            log({
+                type: 'error',
+                content: ('Error Reverting Change: ', error)
+            });
+            chrome.tabs.sendMessage(tabId, {
+                type: "revertWebChange-error",
+                uuid: requestID,
+                message: error
+            });
+            return false;
+        }
+
+        //reconstructing propertyDict into a format that can be posted to the Optimizely API
+        try {
+            log({
+                type: 'debug',
+                content: 'Reconstructing Property Dict for Experiment ' + experimentID
+            });
+
+            //reconstructing variations
+            propertyDict.variations = reconstructWebVariationDict(propertyDict.variations);
+
+            log({
+                type: 'debug',
+                content: 'Property Dict for Experiment ' + experimentID + 'Reconstructed'
+            });
+
+            chrome.tabs.sendMessage(tabId, {
+                type: "revertWebChange-revertReady",
+                uuid: requestID,
+                message: 'Property Dict Reconstructed Successfully',
+                object: propertyDict,
+                experimentID: experimentID,
+            });
+        } catch (error) {
+            log({
+                type: 'error',
+                content: ('Error Reconstructing Property Dict: ', error)
+            });
+            chrome.tabs.sendMessage(tabId, {
+                type: "revertWebChange-error",
+                uuid: requestID,
+                message: error
+            });
+            return false;
+        }
+    }
+    else if (messageComponents[1] === 'postChanges') {
+        //collecting the information from the message
+        try {
+            log({
+                type: 'debug',
+                content: ('Parsing Message Content: ', message)
+            });
+
+            var requestID = message.uuid;
+            var revertToExperiment = message.revertToExperiment;
+            var experimentID = message.experimentID;
+            var propertyDict = message.object;
+
+            var targetingChanged = propertyDict.targetingChanged;
+            delete propertyDict.targetingChanged;
+
+            var experimentStatus = propertyDict.status;
+            delete propertyDict.status;
+
+        } catch (error) {
+            log({
+                type: 'error',
+                content: ('Error Parsing Message Content: ', error)
+            });
+            sendResponse({
+                message: error,
+                success: false
+            });
+        }
+
+        //getting the authorization from session storage
+        try {
+
+            log({
+                type: 'debug',
+                content: 'Fetching Authorization'
+            });
+
+            var [authorization, features] = await Promise.all([fetchAuthorizationFromStorage(), fetchFeaturesFromStorage()]);
+
+            if (authorization && features) {
+                log({
+                    type: 'debug',
+                    content: ('Authorization Fetched: ', authorization)
+                });
+            }
+            else {
+                throw new Error(authorization ? 'Features Not Found in Local Storage' : 'Authorization Not Found in Local or Session Storage');;
+            };
+
+
+        } catch (error) {
+            log({
+                type: 'error',
+                content: ('Error Fetching Authorization: ', error)
+            });
+            sendResponse({
+                message: error,
+                success: false
+            });
+
+            return false;
+        }
+
+        //posting the changes to the Optimizely API
+        //testing both tokens here too
+        try {
+            log({
+                type: 'debug',
+                content: 'Posting Changes to Experiment ' + experimentID
+            });
+
+            var useScrape = features.prioritizeScrape;
+            var sentResponse = false;
+
+            //if targeting was changed, targeting first has to be pushed to the API
+            if (targetingChanged) {
+                try {
+                    await postWebChangeToExperiment({
+                        experimentID: experimentID,
+                        action: experimentStatus,
+                        body: JSON.stringify(propertyDict.page_ids ? { page_ids: propertyDict.page_ids } : { url_targeting: propertyDict.url_targeting })
+                    }, authorization.scraped);
+                    if (experimentConfig) {
+                        log({
+                            type: 'debug',
+                            content: ('Targeting Updated via Scraped Token: ', experimentConfig)
+                        });
+                    }
+                } catch (error) {
+                    log({
+                        type: 'info',
+                        content: ('Error Targeting Updated via Scraped Token: ', error)
+                    });
+                    log({
+                        type: 'debug',
+                        content: 'Attempting to Update Targeing via Stored Token'
+                    });
+                    useScrape = false;
+                    try {
+                        await postWebChangeToExperiment({
+                            experimentID: experimentID,
+                            action: experimentStatus,
+                            body: JSON.stringify(propertyDict.page_ids ? { page_ids: propertyDict.page_ids } : { url_targeting: propertyDict.url_targeting })
+                        }, authorization.stored);
+                        if (experimentConfig) {
+                            log({
+                                type: 'debug',
+                                content: ('Targeting Updated via Stored Token: ', experimentConfig)
+                            });
+                        }
+                    } catch (error) {
+                        sentResponse = true;
+                        sendResponse({
+                            message: 'Error Fetching Authorization. You\'ve indicated that the extension should use a scraped token, but the scraped token couldn\'t be found or is invalid. Please visit a page in the Optimizely Web App that triggers a REST API request (See Extension Documentation on GitHub). Alternatively, provide a Personal Access Token in the extension options page for this account.',
+                            success: false
+                        });
+                        throw new Error('Error Updating Targeting via Stored Token: ', error);
+                    }
+                } 
+            }
+
+            if(targetingChanged) {
+                await postWebChangeToExperiment({
+                    experimentID: experimentID,
+                    action: experimentStatus,
+                    body: JSON.stringify(propertyDict)
+                }, useScrape ? authorization.scraped : authorization.stored);
+
+                log({
+                    type: 'debug',
+                    content: 'Changes Posted to Experiment ' + experimentID
+                });
+            }
+            else {
+                try {
+                    await postWebChangeToExperiment({
+                        experimentID: experimentID,
+                        action: experimentStatus,
+                        body: JSON.stringify(propertyDict)
+                    }, authorization.scraped);
+                    if (experimentConfig) {
+                        log({
+                            type: 'debug',
+                            content: ('Posted Experiment Changes via Scraped Token: ', experimentConfig)
+                        });
+                    }
+                } catch (error) {
+                    log({
+                        type: 'info',
+                        content: ('Error Posting Experiment Changes via Scraped Token: ', error)
+                    });
+                    log({
+                        type: 'debug',
+                        content: 'Attempting to Post Experiment Changes via Stored Token'
+                    });
+                    useScrape = false;
+                    try {
+                        await postWebChangeToExperiment({
+                            experimentID: experimentID,
+                            action: experimentStatus,
+                            body: JSON.stringify(propertyDict)
+                        }, authorization.stored);
+                        if (experimentConfig) {
+                            log({
+                                type: 'debug',
+                                content: ('Posted Experiment Changes via Stored Token: ', experimentConfig)
+                            });
+                        }
+                    } catch (error) {
+                        sentResponse = true;
+                        sendResponse({
+                            message: 'Error Fetching Authorization. You\'ve indicated that the extension should use a scraped token, but the scraped token couldn\'t be found or is invalid. Please visit a page in the Optimizely Web App that triggers a REST API request (See Extension Documentation on GitHub). Alternatively, provide a Personal Access Token in the extension options page for this account.',
+                            success: false
+                        });
+                        throw new Error('Error Posting Experiment Changes via Stored Token: ', error);
+                    }
+                } 
+            }
+
+            sendResponse({
+                message: 'Changes Posted to Experiment ' + experimentID,
+                success: true
+            });
+
+        } catch (error) {
+            log({
+                type: 'error',
+                content: ('Error Posting Changes to Experiment: ', error)
+            });
+            sendResponse({
+                message: error,
+                success: false
+            });
+        }
+    }
+
+    return true;
+};
 
 async function exportVariationChanges(message, sender, sendResponse) {
 
@@ -336,7 +1231,7 @@ async function exportVariationChanges(message, sender, sendResponse) {
                     });
                 }
             } catch (error) {
-                sendResponse = true;
+                sentResponse = true;
                 sendResponse({
                     message:
                         'Error Fetching Authorization. Stored Token is inavlid for this account. You\'ve indicated that the extension should use the stored Personal Access Token to Access the Optimizely API. Please disable use of the stored token or provide a valid Personal Access Token for this account.',
@@ -371,25 +1266,25 @@ async function exportVariationChanges(message, sender, sendResponse) {
 
         //iterating through the variations to find the anchor change firstChangeID
         //if the change is found, we know that is the correct page to export the changes too. Export the changes from that page
-        for(const variation of experimentConfig.variations) {
-            if(variation.variation_id == variationID) {
-                for(const action of variation.actions) {
-                    for(const change of action.changes) {
-                        if(change.id.includes(firstChangeID)) {
+        for (const variation of experimentConfig.variations) {
+            if (variation.variation_id == variationID) {
+                for (const action of variation.actions) {
+                    for (const change of action.changes) {
+                        if (change.id.includes(firstChangeID)) {
                             foundAction = true;
                             break;
                         }
                     }
 
                     //send the changes back to the page
-                    if(foundAction) {
+                    if (foundAction) {
                         log({
                             type: 'info',
                             content: 'Found Changes on Page ID ' + action.page_id + ', Sending Back to Page...'
                         });
 
-                        for(const change of action.changes) {
-                            if(requestedChanges.includes(change.id)) {
+                        for (const change of action.changes) {
+                            if (requestedChanges.includes(change.id)) {
                                 changesExport.push(change);
                             }
                         }
@@ -398,12 +1293,12 @@ async function exportVariationChanges(message, sender, sendResponse) {
                 }
             }
 
-            if(foundAction) {
+            if (foundAction) {
                 break;
             }
         };
 
-        if(!foundAction || changesExport.length === 0) {
+        if (!foundAction || changesExport.length === 0) {
             throw new Error('Unable to Find Changes from Anchor Change');
         }
 
@@ -443,169 +1338,7 @@ async function exportVariationChanges(message, sender, sendResponse) {
     };
 };
 
-function oldExportVariationChanges(message, sender, sendResponse) {
-    //collecting variables from the message
-    var experimentID = message.experimentID;
-    var variationID = message.variationID;
-    var firstChangeID = message.firstChangeID;
-    var requestedChanges = message.requestedChanges;
-
-    log({
-        type: 'debug',
-        content: 'Fetched Message Details Experiment ID: ' + experimentID
-    });
-
-    var authorization = fetchAuthorizationFromStorage();
-    authorization.then(auth => {
-        //authorization fetched
-        if (auth.success) {
-            //authorization fetched successfully
-            log({
-                type: 'debug',
-                content: 'Authorization Fetched: ' + auth.object
-            });
-
-            //fetching the experiment config from the Optimizely REST API
-            var experimentConfig = fetchWebExperimentConfig(experimentID, auth.object);
-            experimentConfig.then(config => {
-                //config fetched
-                if (config.success) {
-                    //config fetched successfully
-
-                    log({
-                        type: 'debug',
-                        content: 'Experiment Config Fetched: ' + config.object
-                    });
-
-                    var currentConfig = config.object;
-                    var foundAction = false;
-                    var sentMessage = false;
-
-                    //iterating through the variations to find the anchor change firstChangeID
-                    //if the change is found, we know that is the correct page to export the changes too. Export the changes from that page
-                    currentConfig.variations.forEach(variation => {
-                        if (variation.variation_id == variationID) {
-                            variation.actions.forEach(action => {
-                                foundAction = false;
-                                action.changes.forEach(change => {
-                                    if (change.id.includes(firstChangeID)) {
-                                        foundAction = true;
-                                        return false;
-                                    }
-                                });
-
-                                //send the changes back to the page
-                                if (foundAction) {
-
-                                    log({
-                                        type: 'info',
-                                        content: 'Found Changes, Sending Back to Page...'
-                                    });
-
-                                    var changesExport = [];
-                                    action.changes.forEach(change => {
-                                        if (requestedChanges.includes(change.id)) {
-                                            changesExport.push(change);
-                                        }
-                                    });
-
-                                    sendResponse({
-                                        message: changesExport,
-                                        success: true
-                                    });
-
-                                    sentMessage = true;
-
-                                    return false;
-                                }
-                            });
-
-                            if (foundAction) {
-                                return false;
-                            }
-                        }
-                    });
-
-                    if (!sentMessage) {
-                        //unable to find a page with a matching change to the anchor change
-                        log({
-                            type: 'error',
-                            content: 'Unable to Find Changes from Anchor Change'
-                        });
-
-                        sendResponse({
-                            message: 'Unable to Find Changes from Anchor Change',
-                            success: false
-                        });
-                    }
-                }
-                else {
-                    //config fetch failed
-                    log({
-                        type: 'error',
-                        content: 'Error Fetching Experiment Config: ' + config.message
-                    });
-
-                    sendResponse({
-                        message: config.message,
-                        success: false
-                    });
-                }
-            }).catch(error => {
-                //fetching the experiment configuration returned an error
-
-                log({
-                    type: 'error',
-                    content: 'Error Fetching Experiment Config: ' + error
-                });
-
-                sendResponse({
-                    message: error,
-                    success: false
-                });
-            });
-        }
-        else {
-            //fetchAuthorizationFromStorage returned a value but it wasn't successful
-
-            log({
-                type: 'error',
-                content: 'Error Fetching Authorization'
-            });
-            sendResponse({
-                message: `
-                    Error Fetching Authorization\n
-                    This Extension Requires a Personal Access Token to Access the Optimizely API. The Extension scrapes network requests made by the Optimizely Web App to get a Personal Access Token (For more Information, see Extension Documentation).\n
-                    Please Visit a Page in the Web App that triggers a REST API Request (documentation) or Provide a Personal Access Token in the Extension Options Page (Coming Soon)\n`,
-                success: false
-            });
-
-            return false;
-        }
-    }).catch(error => {
-        //fetchAuthorizationFromStorage returned an error
-
-        log({
-            type: 'error',
-            content: 'Error Fetching Authorization: ' + error
-        });
-        sendResponse({
-            message: `
-                Error Fetching Authorization\n
-                This Extension Requires a Personal Access Token to Access the Optimizely API. The Extension scrapes network requests made by the Optimizely Web App to get a Personal Access Token (For more Information, see Extension Documentation)\n
-                Please Visit a Page in the Web App that triggers a REST API Request (documentation) or Provide a Personal Access Token in the Extension Options Page (Coming Soon)\n`,
-            success: false
-        });
-
-        return false;
-    });
-
-    //tells the page to wait for a response
-    return true;
-};
-
-//helper function to find the page ID(s) to import changes to for the import function
-//needs to exists because there is no way to scrape the current page ID from the app UI so we need to guess based on the information available
+//Helper Function for importVariationChanges ->  finds the page ID(s) to import changes to for the import function. needs to exists because there is no way to scrape the current page ID from the app UI so we need to guess based on the information available
 async function findPageIDs(experimentConfig, variationID, type, matchContent, authorization) {
     if (type === 'id') {
         var firstChangeID = matchContent;
@@ -799,7 +1532,7 @@ async function importVariationChanges(message, sender, sendResponse) {
                     });
                 }
             } catch (error) {
-                sendResponse = true;
+                sentResponse = true;
                 sendResponse({
                     message:
                         'Error Fetching Authorization. Stored Token is inavlid for this account. You\'ve indicated that the extension should use the stored Personal Access Token to Access the Optimizely API. Please disable use of the stored token or provide a valid Personal Access Token for this account.',
@@ -961,231 +1694,6 @@ async function importVariationChanges(message, sender, sendResponse) {
     }
 };
 
-function oldImportVariationChanges(message, sender, sendResponse) {
-    log({
-        type: 'debug',
-        content: 'Fetched Message Details Experiment ID: ' + experimentID
-    });
-
-    var authorization = fetchAuthorizationFromStorage();
-    authorization.then(auth => {
-        //authorization fetched
-        if (auth.success) {
-            //authorization fetched successfully
-            log({
-                type: 'debug',
-                content: ('Authorization Fetched: ', auth.object)
-            });
-
-            //fetching the experiment config from the Optimizely REST API
-            var experimentConfig = fetchWebExperimentConfig(experimentID, auth.object);
-            experimentConfig.then(config => {
-                //config fetched
-                if (config.success) {
-                    //config fetched successfully
-
-                    log({
-                        type: 'debug',
-                        content: ('Experiment Config Fetched: ', config.object)
-                    });
-
-                    //getting page ID(s) where the changes will be imported
-                    var pageIDs = findPageIDs(config.object, variationID, message.type.split('-')[1], message.matchContent, auth.object);
-                    pageIDs.then(pages => {
-                        //page IDs fetched
-                        if (pages.success) {
-                            //page IDs fetched successfully
-
-                            log({
-                                type: 'debug',
-                                content: ('Page IDs Fetched: ', pages.object)
-                            });
-
-                            //modifying the imported changes to remove the change ID
-                            //the change ID isn't needed and could interfere and cause issues if changes are imported on top of each other
-                            //to simplfy things, we'll let the API reassign new change IDs
-                            var importedChanges = message.changes;
-                            importedChanges.forEach(change => {
-                                delete change.id;
-                            });
-
-                            //extracting the variations object from the experiment config
-                            var variationsConfig = config.object.variations;
-
-                            //iterating through the variations to find the variation to import the changes to
-                            variationsConfig.forEach(variation => {
-                                //we do two things here
-                                //1. delete the share_link property from the all the action objects across both variations
-                                //2. add the imported changes to the action object of the varition and page we want to import the changes to
-
-                                variation.actions.forEach(action => {
-                                    delete action.share_link;
-
-                                    if (variation.variation_id === variationID && pages.object.includes(action.page_id)) {
-                                        //found the variation to import the changes to
-                                        //adding the changes to the variation
-                                        action.changes = action.changes.concat(importedChanges);
-                                    }
-                                });
-                            });
-
-                            log({
-                                type: 'debug',
-                                content: ('Variation Object Created', variationsConfig)
-                            });
-
-                            //getting the current status of the experiment so the state of the experiment doesn't change when transfering changes
-                            var currentStatus = '';
-                            if (config.object.status === 'not_started' || config.object.status === 'paused') {
-                                currentStatus = 'pause';
-                            }
-                            else if (config.object.status === 'running') {
-                                currentStatus = 'resume';
-                            }
-                            else {
-                                currentStatus = 'pause';
-                            }
-
-                            log({
-                                type: 'debug',
-                                content: ('Posting Changes to Experiment ', experimentID)
-                            });
-
-                            //posting the changes back to the experiment
-                            var changeVariationsSuccess = postWebChangeToExperiment({
-                                experimentID: experimentID,
-                                action: currentStatus,
-                                body: JSON.stringify({
-                                    "variations": variationsConfig
-                                })
-                            }, auth.object);
-                            changeVariationsSuccess.then(response => {
-                                //checking to make sure the changes were posted successfully
-                                if (response.success) {
-                                    log({
-                                        type: 'debug',
-                                        content: 'Changes Imported'
-                                    });
-
-                                    sendResponse({
-                                        message: 'Changes Imported',
-                                        success: true
-                                    });
-                                }
-                                else {
-                                    log({
-                                        type: 'error',
-                                        content: 'Error Importing Experiment Changes: ' + response.message
-                                    });
-
-                                    sendResponse({
-                                        message: response.message,
-                                        success: false
-                                    });
-                                }
-                            }).catch(error => {
-
-                                log({
-                                    type: 'error',
-                                    content: 'Error Importing Experiment Changes: ' + error
-                                });
-
-                                sendResponse({
-                                    message: error,
-                                    success: false
-                                });
-                            });
-                        }
-                        else {
-                            //page IDs fetch failed
-                            log({
-                                type: 'error',
-                                content: ('Error Fetching Page IDs: ', pages.message)
-                            });
-
-                            sendResponse({
-                                message: pages.message,
-                                success: false
-                            });
-                        }
-                    }).catch(error => {
-                        //fetching the page IDs returned an error
-                        log({
-                            type: 'error',
-                            content: ('Error Fetching Page IDs: ', error)
-                        });
-
-                        sendResponse({
-                            message: error,
-                            success: false
-                        });
-                    });
-                }
-                else {
-                    //config fetch failed
-                    log({
-                        type: 'error',
-                        content: ('Error Fetching Experiment Config: ', config.message)
-                    });
-
-                    sendResponse({
-                        message: config.message,
-                        success: false
-                    });
-                }
-            }).catch(error => {
-                //fetching the experiment configuration returned an error
-
-                log({
-                    type: 'error',
-                    content: ('Error Fetching Experiment Config: ', error)
-                });
-
-                sendResponse({
-                    message: error,
-                    success: false
-                });
-            });
-        }
-        else {
-            //fetchAuthorizationFromStorage returned a value but it wasn't successful
-
-            log({
-                type: 'error',
-                content: 'Error Fetching Authorization'
-            });
-            sendResponse({
-                message: `
-                    Error Fetching Authorization\n
-                    This Extension Requires a Personal Access Token to Access the Optimizely API. The Extension scrapes network requests made by the Optimizely Web App to get a Personal Access Token (For more Information, see Extension Documentation).\n
-                    Please Visit a Page in the Web App that triggers a REST API Request (documentation) or Provide a Personal Access Token in the Extension Options Page (Coming Soon)\n`,
-                success: false
-            });
-
-            return false;
-        }
-    }).catch(error => {
-        //fetchAuthorizationFromStorage returned an error
-
-        log({
-            type: 'error',
-            content: 'Error Fetching Authorization: ' + error
-        });
-        sendResponse({
-            message: `
-                Error Fetching Authorization\n
-                This Extension Requires a Personal Access Token to Access the Optimizely API. The Extension scrapes network requests made by the Optimizely Web App to get a Personal Access Token (For more Information, see Extension Documentation)\n
-                Please Visit a Page in the Web App that triggers a REST API Request (documentation) or Provide a Personal Access Token in the Extension Options Page (Coming Soon)\n`,
-            success: false
-        });
-
-        return false;
-    });
-
-    //tells the page to wait for a response
-    return true;
-};
-
 async function deleteVariationChanges(message, sender, sendResponse) {
 
     //parsing message content for needed information 
@@ -1313,7 +1821,7 @@ async function deleteVariationChanges(message, sender, sendResponse) {
                     });
                 }
             } catch (error) {
-                sendResponse = true;
+                sentResponse = true;
                 sendResponse({
                     message:
                         'Error Fetching Authorization. Stored Token is inavlid for this account. You\'ve indicated that the extension should use the stored Personal Access Token to Access the Optimizely API. Please disable use of the stored token or provide a valid Personal Access Token for this account.',
@@ -1476,213 +1984,6 @@ async function deleteVariationChanges(message, sender, sendResponse) {
     return true;
 };
 
-function oldDelete() {
-    //collecting variables from the message
-    var experimentID = message.experimentID;
-    var variationID = message.variationID;
-    var firstChangeID = message.firstChangeID;
-    var requestedChanges = message.requestedChanges;
-
-    log({
-        type: 'debug',
-        content: 'Fetched Message Details Experiment ID: ' + experimentID
-    });
-
-    var authorization = fetchAuthorizationFromStorage();
-    authorization.then(auth => {
-        //authorization fetched
-        if (auth.success) {
-            //authorization fetched successfully
-            log({
-                type: 'debug',
-                content: 'Authorization Fetched: ' + auth.object
-            });
-
-            //fetching the experiment config from the Optimizely REST API
-            var experimentConfig = fetchWebExperimentConfig(experimentID, auth.object);
-            experimentConfig.then(config => {
-                //config fetched
-                if (config.success) {
-                    //config fetched successfully
-
-                    log({
-                        type: 'debug',
-                        content: 'Experiment Config Fetched: ' + config.object
-                    });
-
-                    //getting the current status of the experiment so the state of the experiment doesn't change when transfering changes
-                    var currentStatus = '';
-                    if (config.object.status === 'not_started' || config.object.status === 'paused') {
-                        currentStatus = 'pause';
-                    }
-                    else if (config.object.status === 'running') {
-                        currentStatus = 'resume';
-                    }
-                    else {
-                        currentStatus = 'pause';
-                    }
-
-                    var currentConfig = config.object;
-                    var foundAction = false;
-                    var sentMessage = false;
-
-                    //iterating through the variations to find the anchor change firstChangeID
-                    //if the change is found, we know that is the correct page to export the changes too. Export the changes from that page
-                    currentConfig.variations.forEach(variation => {
-                        if (variation.variation_id == variationID) {
-                            variation.actions.forEach(action => {
-                                foundAction = false;
-                                action.changes.forEach(change => {
-                                    if (change.id.includes(firstChangeID)) {
-                                        foundAction = true;
-                                        return false;
-                                    }
-                                });
-
-                                //send the changes back to the page
-                                if (foundAction) {
-
-                                    log({
-                                        type: 'info',
-                                        content: 'Found Changes, Deleting...'
-                                    });
-
-                                    action.changes = action.changes.filter(change => !requestedChanges.includes(change.id));
-
-                                    var changeVariationsSuccess = postWebChangeToExperiment({
-                                        experimentID: experimentID,
-                                        action: currentStatus,
-                                        body: JSON.stringify({
-                                            "variations": currentConfig.variations
-                                        })
-                                    }, auth.object);
-                                    changeVariationsSuccess.then(response => {
-                                        //checking to make sure the changes were posted successfully
-                                        if (response.success) {
-                                            log({
-                                                type: 'debug',
-                                                content: 'Changes Deleted'
-                                            });
-
-                                            sendResponse({
-                                                message: 'Changes Deleted',
-                                                success: true
-                                            });
-                                        }
-                                        else {
-                                            log({
-                                                type: 'error',
-                                                content: ('Error Deleting Experiment Changes: ', response.message)
-                                            });
-
-                                            sendResponse({
-                                                message: response.message,
-                                                success: false
-                                            });
-                                        }
-                                    }).catch(error => {
-
-                                        log({
-                                            type: 'error',
-                                            content: ('Error Deleting Experiment Changes: ', error)
-                                        });
-
-                                        sendResponse({
-                                            message: error,
-                                            success: false
-                                        });
-                                    });
-
-                                    sentMessage = true;
-
-                                    return false;
-                                }
-                            });
-
-                            if (foundAction) {
-                                return false;
-                            }
-                        }
-                    });
-
-                    if (!sentMessage) {
-                        //unable to find a page with a matching change to the anchor change
-                        log({
-                            type: 'error',
-                            content: 'Unable to Find Changes from Anchor Change'
-                        });
-
-                        sendResponse({
-                            message: 'Unable to Find Changes from Anchor Change',
-                            success: false
-                        });
-                    }
-                }
-                else {
-                    //config fetch failed
-                    log({
-                        type: 'error',
-                        content: 'Error Fetching Experiment Config: ' + config.message
-                    });
-
-                    sendResponse({
-                        message: config.message,
-                        success: false
-                    });
-                }
-            }).catch(error => {
-                //fetching the experiment configuration returned an error
-
-                log({
-                    type: 'error',
-                    content: 'Error Fetching Experiment Config: ' + error
-                });
-
-                sendResponse({
-                    message: error,
-                    success: false
-                });
-            });
-        }
-        else {
-            //fetchAuthorizationFromStorage returned a value but it wasn't successful
-
-            log({
-                type: 'error',
-                content: 'Error Fetching Authorization'
-            });
-            sendResponse({
-                message: `
-                    Error Fetching Authorization\n
-                    This Extension Requires a Personal Access Token to Access the Optimizely API. The Extension scrapes network requests made by the Optimizely Web App to get a Personal Access Token (For more Information, see Extension Documentation).\n
-                    Please Visit a Page in the Web App that triggers a REST API Request (documentation) or Provide a Personal Access Token in the Extension Options Page (Coming Soon)\n`,
-                success: false
-            });
-
-            return false;
-        }
-    }).catch(error => {
-        //fetchAuthorizationFromStorage returned an error
-
-        log({
-            type: 'error',
-            content: 'Error Fetching Authorization: ' + error
-        });
-        sendResponse({
-            message: `
-                Error Fetching Authorization\n
-                This Extension Requires a Personal Access Token to Access the Optimizely API. The Extension scrapes network requests made by the Optimizely Web App to get a Personal Access Token (For more Information, see Extension Documentation)\n
-                Please Visit a Page in the Web App that triggers a REST API Request (documentation) or Provide a Personal Access Token in the Extension Options Page (Coming Soon)\n`,
-            success: false
-        });
-
-        return false;
-    });
-
-    //tells the page to wait for a response
-    return true;
-};
-
 async function transferChanges(message, sender, sendResponse) {
 
     //parsing message content for needed information 
@@ -1821,7 +2122,7 @@ async function transferChanges(message, sender, sendResponse) {
                     });
                 }
             } catch (error) {
-                sendResponse = true;
+                sentResponse = true;
                 sendResponse({
                     message:
                         'Error Fetching Authorization. Stored Token is inavlid for this account. You\'ve indicated that the extension should use the stored Personal Access Token to Access the Optimizely API. Please disable use of the stored token or provide a valid Personal Access Token for this account.',
@@ -2026,249 +2327,6 @@ async function transferChanges(message, sender, sendResponse) {
     return true;
 };
 
-function oldTransferChanges() {
-    var authorization = fetchAuthorizationFromStorage();
-    authorization.then(auth => {
-        //authorization fetched
-        if (auth.success) {
-            //authorization fetched successfully
-            log({
-                type: 'debug',
-                content: 'Authorization Fetched: ' + auth.object
-            });
-
-            //fetching the experiment config from the Optimizely REST API
-            var experimentConfig = fetchWebExperimentConfig(experimentID, auth.object);
-            experimentConfig.then(config => {
-                //config fetched
-                if (config.success) {
-                    //config fetched successfully
-
-                    log({
-                        type: 'debug',
-                        content: 'Experiment Config Fetched: ' + config.object
-                    });
-
-                    var currentConfig = config.object;
-
-                    //getting the current status of the experiment so the state of the experiment doesn't change when transfering changes
-                    var currentStatus = '';
-                    if (currentConfig.status === 'not_started' || currentConfig.status === 'paused') {
-                        currentStatus = 'pause';
-                    }
-                    else if (currentConfig.status === 'running') {
-                        currentStatus = 'resume';
-                    }
-                    else {
-                        currentStatus = 'pause';
-                    }
-                    //changing the targeting of the experiment from URL Targeting the Page Targeting
-                    var changeTargetingSuccess = postWebChangeToExperiment({
-                        experimentID: experimentID,
-                        action: currentStatus,
-                        body: JSON.stringify({
-                            "page_ids": allPages
-                        })
-                    }, auth.object);
-                    changeTargetingSuccess.then(response => {
-                        //checking to make sure the targeting change was successful
-
-                        if (response.success) {
-                            //modifying the config variations
-                            if (pages.length == 0) {
-                                //no changes to apply to pages
-
-                                log({
-                                    type: 'debug',
-                                    content: 'No Page Rules Selected to transfer changes to'
-                                });
-
-                                sendResponse({
-                                    message: 'No Page Rules Selected to transfer changes to',
-                                    success: true
-                                });
-                            }
-                            else {
-                                //changes to apply to pages
-
-                                //getting current variations changes
-                                currentVariations = currentConfig.variations;
-
-                                currentVariations.forEach(variation => {
-                                    //adding the changes from each variation to the pages selected
-
-                                    log({
-                                        type: 'debug',
-                                        content: 'Transferring Changes from Variation ' + variation.id + ' to Pages'
-                                    });
-
-                                    //variation will have only one action array since it was configured for URL targeting
-                                    if (variation.actions.length == 1) {
-                                        //copying the actions array and adding it back to the changes for each specified page rule
-                                        currentAction = deepCopy(variation.actions[0]);
-                                        delete currentAction.share_link;
-                                        currentAction.changes.forEach(change => {
-                                            delete change.id;
-                                        });
-                                        actions = [];
-
-                                        pages.forEach(page => {
-                                            currentAction.page_id = page;
-                                            actions.push(deepCopy(currentAction));
-                                        });
-                                        variation.actions = actions;
-                                    }
-                                    else {
-                                        //no changes in variation
-                                        log({
-                                            type: 'debug',
-                                            content: 'No Changes in Variation ' + variation.id
-                                        });
-                                    }
-                                });
-
-                                log({
-                                    type: 'debug',
-                                    content: 'Posting Changes to Experiment ' + experimentID
-                                });
-
-                                //sending the changes back to the experiment
-                                var changeVariationsSuccess = postWebChangeToExperiment({
-                                    experimentID: experimentID,
-                                    action: currentStatus,
-                                    body: JSON.stringify({
-                                        "variations": currentVariations
-                                    })
-                                }, auth.object);
-                                changeVariationsSuccess.then(response => {
-                                    if (response.success) {
-
-                                        log({
-                                            type: 'debug',
-                                            content: 'Changes Transfered'
-                                        });
-
-                                        sendResponse({
-                                            message: 'Changes Transfered',
-                                            success: true
-                                        });
-                                    }
-                                    else {
-
-                                        log({
-                                            type: 'error',
-                                            content: 'Error Transfering Experiment Changes: ' + response.message
-                                        });
-
-                                        sendResponse({
-                                            message: response.message,
-                                            success: false
-                                        });
-                                    }
-                                }).catch(error => {
-
-                                    log({
-                                        type: 'error',
-                                        content: 'Error Transfering Experiment Changes: ' + error
-                                    });
-
-                                    sendResponse({
-                                        message: error,
-                                        success: false
-                                    });
-                                });
-                            }
-                        }
-                        else {
-                            log({
-                                type: 'error',
-                                content: 'Error Changing Experiment Targeting'
-                            });
-                            sendResponse({
-                                message: response.message,
-                                success: false
-                            });
-                        }
-                        log({
-                            type: 'debug',
-                            content: 'Experiment Targeting Updated'
-                        });
-                    }).catch(error => {
-                        log({
-                            type: 'error',
-                            content: 'Error Changing Experiment Targeting: ' + error
-                        });
-                        sendResponse({
-                            message: error,
-                            success: false
-                        });
-                    });
-                }
-                else {
-                    //config fetch failed
-                    log({
-                        type: 'error',
-                        content: 'Error Fetching Experiment Config: ' + config.message
-                    });
-
-                    sendResponse({
-                        message: config.message,
-                        success: false
-                    });
-                }
-            }).catch(error => {
-                //fetching the experiment configuration returned an error
-
-                log({
-                    type: 'error',
-                    content: 'Error Fetching Experiment Config: ' + error
-                });
-
-                sendResponse({
-                    message: error,
-                    success: false
-                });
-            });
-        }
-        else {
-            //fetchAuthorizationFromStorage returned a value but it wasn't successful
-
-            log({
-                type: 'error',
-                content: 'Error Fetching Authorization'
-            });
-            sendResponse({
-                message: `
-                    Error Fetching Authorization\n
-                    This Extension Requires a Personal Access Token to Access the Optimizely API. The Extension scrapes network requests made by the Optimizely Web App to get a Personal Access Token (For more Information, see Extension Documentation).\n
-                    Please Visit a Page in the Web App that triggers a REST API Request (documentation) or Provide a Personal Access Token in the Extension Options Page (Coming Soon)\n`,
-                success: false
-            });
-
-            return false;
-        }
-    }).catch(error => {
-        //fetchAuthorizationFromStorage returned an error
-
-        log({
-            type: 'error',
-            content: 'Error Fetching Authorization: ' + error
-        });
-        sendResponse({
-            message: `
-                Error Fetching Authorization\n
-                This Extension Requires a Personal Access Token to Access the Optimizely API. The Extension scrapes network requests made by the Optimizely Web App to get a Personal Access Token (For more Information, see Extension Documentation)\n
-                Please Visit a Page in the Web App that triggers a REST API Request (documentation) or Provide a Personal Access Token in the Extension Options Page (Coming Soon)\n`,
-            success: false
-        });
-
-        return false;
-    });
-
-    //tells the page to wait for a response
-    return true;
-};
-
 //---------- End Extension Functions----------
 
 //---------- Worker Functions----------
@@ -2328,6 +2386,17 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
         //delete variation changes
         deleteVariationChanges(message, sender, sendResponse);
+        return true;
+    }
+    else if (messageType === 'revertWebChange') {
+        //revert web changes message received
+        log({
+            type: 'debug',
+            content: 'Revert Web Changes Message Received'
+        });
+
+        //revert web changes
+        revertWebChanges(message, sender, sendResponse);
         return true;
     }
     else {
@@ -2480,6 +2549,7 @@ chrome.storage.local.get(['enabledFeatures'], function (result) {
                     transferChanges: true,
                     importExportDeleteChanges: true,
                     revertChanges: true,
+                    logLevel: 'error',
                     prioritizeScrape: false //this feature is disabled by default
                 }
             }, function () {

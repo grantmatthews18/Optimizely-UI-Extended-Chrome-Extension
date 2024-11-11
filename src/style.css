@@ -1,3 +1,30 @@
 .lego-dialog--narrow {
     width: 750px !important;
 }
+
+.optimizelyExtended-revertWebContentHidden {
+    display: none;
+}
+
+.optimizelyExtended-revertWebContent {
+    padding: 0 40px 40px;
+}
+
+.optimizelyExtended-revertWebContent_List {
+    overflow: auto;
+    border: 2px solid #ccc;
+}
+
+.optimizelyExtended-revertWebContent_logLis {
+    max-height: 30vh;
+}
+
+.optimizelyExtended-revertWebContent_warningList {
+    max-height: 10vh;
+    color: orange;
+}
+
+.optimizelyExtended-revertWebContent_errorList {
+    max-height: 10vh;
+    color: red  ;
+}
