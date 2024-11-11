@@ -206,6 +206,38 @@ async function fetchPageConfig(pageID, authorization) {
     }
 };
 
+async function postWebChangeToNewExperiment(postObject, authorization) {
+
+    action = postObject.action;
+    body = postObject.body;
+
+    const myHeaders = new Headers();
+    myHeaders.append("accept", "application/json");
+    myHeaders.append("authorization", authorization);
+    myHeaders.append("content-type", "application/json");
+
+    const requestOptions = {
+        method: "POST",
+        headers: myHeaders,
+        redirect: "follow",
+        body: body
+    };
+
+    var response = await fetch("https://api.optimizely.com/v2/experiments?action=publish", requestOptions);
+
+    if (response.status == 200) {
+        log({
+            type: 'debug',
+            content: ('Changes Posted to Experiment ' + experimentID + ': ', response)
+        });
+        return (response.json());
+    }
+    else {
+        throw new Error("Failed to Post Changes to Experiment " + experimentID + ": " + response);
+    }
+
+}
+
 async function postWebChangeToExperiment(postObject, authorization) {
     experimentID = postObject.experimentID;
     action = postObject.action;
@@ -714,11 +746,11 @@ async function revertWebChanges(message, sender, sendResponse) {
                             message: 'Experiment History Fetched Successfully'
                         });
                     }
-    
+
                     resolve(changes);
                 });
 
-                return(changes)
+                return (changes)
             });
 
             var configPromise = new Promise((resolve, reject) => {
@@ -738,6 +770,13 @@ async function revertWebChanges(message, sender, sendResponse) {
                 propertyDict.warnings = [];
                 //adding a array to the property dict to hold errors/reasons why revert to experiment isn't possible
                 propertyDict.reasons = [];
+                //adding the change being reverted to the property dict
+                propertyDict.changeID = changeID;
+                //adding the experiment type to the property dict
+                propertyDict.type = experimentConfig.type;
+                //adding the project ID to the property dict
+                propertyDict.project_id = parseInt(projectID, 10);;
+
                 //adding the current experiment status to the property dict
                 if (experimentConfig.status === 'not_started' || experimentConfig.status === 'paused') {
                     propertyDict.status = 'pause';
@@ -927,6 +966,9 @@ async function revertWebChanges(message, sender, sendResponse) {
             var experimentStatus = propertyDict.status;
             delete propertyDict.status;
 
+            var changeID = propertyDict.changeID;
+            delete propertyDict.changeID;
+
         } catch (error) {
             log({
                 type: 'error',
@@ -972,137 +1014,191 @@ async function revertWebChanges(message, sender, sendResponse) {
             return false;
         }
 
-        //posting the changes to the Optimizely API
-        //testing both tokens here too
-        try {
-            log({
-                type: 'debug',
-                content: 'Posting Changes to Experiment ' + experimentID
-            });
+        //posting changes to the Optimizely API
+        if (revertToExperiment) {
+            try {
+                log({
+                    type: 'debug',
+                    content: 'Posting Changes to Experiment ' + experimentID
+                });
 
-            var useScrape = features.prioritizeScrape;
-            var sentResponse = false;
+                //deleting keys only needed for creating a new experiment
+                delete propertyDict.project_id;
+                delete propertyDict.type;
 
-            //if targeting was changed, targeting first has to be pushed to the API
-            if (targetingChanged) {
-                try {
-                    await postWebChangeToExperiment({
-                        experimentID: experimentID,
-                        action: experimentStatus,
-                        body: JSON.stringify(propertyDict.page_ids ? { page_ids: propertyDict.page_ids } : { url_targeting: propertyDict.url_targeting })
-                    }, authorization.scraped);
-                    if (experimentConfig) {
-                        log({
-                            type: 'debug',
-                            content: ('Targeting Updated via Scraped Token: ', experimentConfig)
-                        });
-                    }
-                } catch (error) {
-                    log({
-                        type: 'info',
-                        content: ('Error Targeting Updated via Scraped Token: ', error)
-                    });
-                    log({
-                        type: 'debug',
-                        content: 'Attempting to Update Targeing via Stored Token'
-                    });
-                    useScrape = false;
+                var useScrape = features.prioritizeScrape;
+                var sentResponse = false;
+
+                //if targeting was changed, targeting first has to be pushed to the API
+                if (targetingChanged) {
                     try {
                         await postWebChangeToExperiment({
                             experimentID: experimentID,
                             action: experimentStatus,
                             body: JSON.stringify(propertyDict.page_ids ? { page_ids: propertyDict.page_ids } : { url_targeting: propertyDict.url_targeting })
-                        }, authorization.stored);
+                        }, authorization.scraped);
                         if (experimentConfig) {
                             log({
                                 type: 'debug',
-                                content: ('Targeting Updated via Stored Token: ', experimentConfig)
+                                content: ('Targeting Updated via Scraped Token: ', experimentConfig)
                             });
                         }
                     } catch (error) {
-                        sentResponse = true;
-                        sendResponse({
-                            message: 'Error Fetching Authorization. You\'ve indicated that the extension should use a scraped token, but the scraped token couldn\'t be found or is invalid. Please visit a page in the Optimizely Web App that triggers a REST API request (See Extension Documentation on GitHub). Alternatively, provide a Personal Access Token in the extension options page for this account.',
-                            success: false
+                        log({
+                            type: 'info',
+                            content: ('Error Targeting Updated via Scraped Token: ', error)
                         });
-                        throw new Error('Error Updating Targeting via Stored Token: ', error);
+                        log({
+                            type: 'debug',
+                            content: 'Attempting to Update Targeing via Stored Token'
+                        });
+                        useScrape = false;
+                        try {
+                            await postWebChangeToExperiment({
+                                experimentID: experimentID,
+                                action: experimentStatus,
+                                body: JSON.stringify(propertyDict.page_ids ? { page_ids: propertyDict.page_ids } : { url_targeting: propertyDict.url_targeting })
+                            }, authorization.stored);
+                            if (experimentConfig) {
+                                log({
+                                    type: 'debug',
+                                    content: ('Targeting Updated via Stored Token: ', experimentConfig)
+                                });
+                            }
+                        } catch (error) {
+                            sentResponse = true;
+                            sendResponse({
+                                message: 'Error Fetching Authorization. You\'ve indicated that the extension should use a scraped token, but the scraped token couldn\'t be found or is invalid. Please visit a page in the Optimizely Web App that triggers a REST API request (See Extension Documentation on GitHub). Alternatively, provide a Personal Access Token in the extension options page for this account.',
+                                success: false
+                            });
+                            throw new Error('Error Updating Targeting via Stored Token: ', error);
+                        }
                     }
-                } 
-            }
+                }
 
-            if(targetingChanged) {
-                await postWebChangeToExperiment({
-                    experimentID: experimentID,
-                    action: experimentStatus,
-                    body: JSON.stringify(propertyDict)
-                }, useScrape ? authorization.scraped : authorization.stored);
-
-                log({
-                    type: 'debug',
-                    content: 'Changes Posted to Experiment ' + experimentID
-                });
-            }
-            else {
-                try {
+                if (targetingChanged) {
                     await postWebChangeToExperiment({
                         experimentID: experimentID,
                         action: experimentStatus,
                         body: JSON.stringify(propertyDict)
-                    }, authorization.scraped);
-                    if (experimentConfig) {
-                        log({
-                            type: 'debug',
-                            content: ('Posted Experiment Changes via Scraped Token: ', experimentConfig)
-                        });
-                    }
-                } catch (error) {
-                    log({
-                        type: 'info',
-                        content: ('Error Posting Experiment Changes via Scraped Token: ', error)
-                    });
+                    }, useScrape ? authorization.scraped : authorization.stored);
+
                     log({
                         type: 'debug',
-                        content: 'Attempting to Post Experiment Changes via Stored Token'
+                        content: 'Changes Posted to Experiment ' + experimentID
                     });
-                    useScrape = false;
+                }
+                else {
                     try {
                         await postWebChangeToExperiment({
                             experimentID: experimentID,
                             action: experimentStatus,
                             body: JSON.stringify(propertyDict)
-                        }, authorization.stored);
+                        }, authorization.scraped);
                         if (experimentConfig) {
                             log({
                                 type: 'debug',
-                                content: ('Posted Experiment Changes via Stored Token: ', experimentConfig)
+                                content: ('Posted Experiment Changes via Scraped Token: ', experimentConfig)
                             });
                         }
                     } catch (error) {
-                        sentResponse = true;
-                        sendResponse({
-                            message: 'Error Fetching Authorization. You\'ve indicated that the extension should use a scraped token, but the scraped token couldn\'t be found or is invalid. Please visit a page in the Optimizely Web App that triggers a REST API request (See Extension Documentation on GitHub). Alternatively, provide a Personal Access Token in the extension options page for this account.',
-                            success: false
+                        log({
+                            type: 'info',
+                            content: ('Error Posting Experiment Changes via Scraped Token: ', error)
                         });
-                        throw new Error('Error Posting Experiment Changes via Stored Token: ', error);
+                        log({
+                            type: 'debug',
+                            content: 'Attempting to Post Experiment Changes via Stored Token'
+                        });
+                        useScrape = false;
+                        try {
+                            await postWebChangeToExperiment({
+                                experimentID: experimentID,
+                                action: experimentStatus,
+                                body: JSON.stringify(propertyDict)
+                            }, authorization.stored);
+                            if (experimentConfig) {
+                                log({
+                                    type: 'debug',
+                                    content: ('Posted Experiment Changes via Stored Token: ', experimentConfig)
+                                });
+                            }
+                        } catch (error) {
+                            sentResponse = true;
+                            sendResponse({
+                                message: 'Error Fetching Authorization. You\'ve indicated that the extension should use a scraped token, but the scraped token couldn\'t be found or is invalid. Please visit a page in the Optimizely Web App that triggers a REST API request (See Extension Documentation on GitHub). Alternatively, provide a Personal Access Token in the extension options page for this account.',
+                                success: false
+                            });
+                            throw new Error('Error Posting Experiment Changes via Stored Token: ', error);
+                        }
                     }
-                } 
+                }
+
+                sendResponse({
+                    message: 'Changes Posted to Experiment ' + experimentID,
+                    success: true
+                });
+
+            } catch (error) {
+                log({
+                    type: 'error',
+                    content: ('Error Posting Changes to Experiment: ', error)
+                });
+                sendResponse({
+                    message: error,
+                    success: false
+                });
             }
 
-            sendResponse({
-                message: 'Changes Posted to Experiment ' + experimentID,
-                success: true
-            });
-
-        } catch (error) {
-            log({
-                type: 'error',
-                content: ('Error Posting Changes to Experiment: ', error)
-            });
-            sendResponse({
-                message: error,
-                success: false
-            });
         }
+        else {
+            try {
+                propertyDict.name = '[' + changeID + '] - ' + propertyDict.name;
+
+                await postWebChangeToNewExperiment({
+                    action: experimentStatus,
+                    body: JSON.stringify(propertyDict)
+                }, authorization.scraped);
+                if (experimentConfig) {
+                    log({
+                        type: 'debug',
+                        content: ('Posted Experiment Changes via Scraped Token: ', experimentConfig)
+                    });
+                }
+            } catch (error) {
+                log({
+                    type: 'info',
+                    content: ('Error Posting Experiment Changes via Scraped Token: ', error)
+                });
+                log({
+                    type: 'debug',
+                    content: 'Attempting to Post Experiment Changes via Stored Token'
+                });
+                useScrape = false;
+                try {
+                    await postWebChangeToNewExperiment({
+                        action: experimentStatus,
+                        body: JSON.stringify(propertyDict)
+                    }, authorization.stored);
+                    if (experimentConfig) {
+                        log({
+                            type: 'debug',
+                            content: ('Posted Experiment Changes via Stored Token: ', experimentConfig)
+                        });
+                    }
+                } catch (error) {
+                    sentResponse = true;
+                    sendResponse({
+                        message: 'Error Fetching Authorization. You\'ve indicated that the extension should use a scraped token, but the scraped token couldn\'t be found or is invalid. Please visit a page in the Optimizely Web App that triggers a REST API request (See Extension Documentation on GitHub). Alternatively, provide a Personal Access Token in the extension options page for this account.',
+                        success: false
+                    });
+                    throw new Error('Error Posting Experiment Changes via Stored Token: ', error);
+                }
+            }
+        }
+
+        //posting the changes to the Optimizely API
+        //testing both tokens here too
     }
 
     return true;
@@ -1421,7 +1517,7 @@ async function importVariationChanges(message, sender, sendResponse) {
         if (!Array.isArray(importedChanges)) {
             throw new Error('Imported changes should be an array');
         }
-        else{
+        else {
             importedChanges.forEach((change) => {
                 if (typeof change.async === 'undefined' || !change.attributes || !change.css || !change.dependencies || !change.id || !change.rearrange || !change.selector || !change.type) {
                     console.log(change);
