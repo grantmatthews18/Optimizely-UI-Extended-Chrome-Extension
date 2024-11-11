@@ -242,10 +242,10 @@ async function postWebChangeToExperiment(postObject, authorization) {
 function log(message) {
     var type = message.type;
     if (type === 'error') {
-        console.error('[Service Worker]', message.content);
+        console.error(message.content);
     }
     else {
-        console.log('[Service Worker]', message.content);
+        console.log(message.content);
     }
 }
 //-----------------End Logging Functions-----------------
@@ -1128,7 +1128,7 @@ async function exportVariationChanges(message, sender, sendResponse) {
             content: ('Parsing Message Content: ', error)
         });
         sendResponse({
-            message: error,
+            message: error.message,
             success: false
         });
         return false;
@@ -1164,7 +1164,7 @@ async function exportVariationChanges(message, sender, sendResponse) {
             content: ('Error Fetching Authorization: ', error)
         });
         sendResponse({
-            message: error,
+            message: error.message,
             success: false
         });
         return false;
@@ -1309,7 +1309,7 @@ async function exportVariationChanges(message, sender, sendResponse) {
             content: ('Error Collecting Changes to Export: ', error)
         });
         sendResponse({
-            message: error,
+            message: error.message,
             success: false
         });
         return false;
@@ -1331,7 +1331,7 @@ async function exportVariationChanges(message, sender, sendResponse) {
             content: ('Error Sending Changes Back to Page: ', error)
         });
         sendResponse({
-            message: error,
+            message: error.message,
             success: false
         });
         return false;
@@ -1418,6 +1418,18 @@ async function importVariationChanges(message, sender, sendResponse) {
         var importedChanges = message.changes;
         var matchContent = message.matchContent;
 
+        if (!Array.isArray(importedChanges)) {
+            throw new Error('Imported changes should be an array');
+        }
+        else{
+            importedChanges.forEach((change) => {
+                if (typeof change.async === 'undefined' || !change.attributes || !change.css || !change.dependencies || !change.id || !change.rearrange || !change.selector || !change.type) {
+                    console.log(change);
+                    throw new Error('Imported Changes Incorrectly Formated');
+                }
+            });
+        }
+
         log({
             type: 'debug',
             content: ('Message Parsed: Importing Changes ', message.changes, 'to ' + variationID + ' of experiment ' + experimentID + '(yet to find page ID)')
@@ -1429,7 +1441,7 @@ async function importVariationChanges(message, sender, sendResponse) {
             content: ('Parsing Message Content: ', error)
         });
         sendResponse({
-            message: error,
+            message: error.message,
             success: false
         });
         return false;
@@ -1465,7 +1477,7 @@ async function importVariationChanges(message, sender, sendResponse) {
             content: ('Error Fetching Authorization: ', error)
         });
         sendResponse({
-            message: error,
+            message: error.message,
             success: false
         });
         return false;
@@ -1570,7 +1582,7 @@ async function importVariationChanges(message, sender, sendResponse) {
             content: ('Error Finding Page ID to Import Changes: ', error)
         });
         sendResponse({
-            message: error,
+            message: error.message,
             success: false
         });
         return false;
@@ -1621,7 +1633,7 @@ async function importVariationChanges(message, sender, sendResponse) {
             content: ('Error Importing Changes to Variation: ', error)
         });
         sendResponse({
-            message: error,
+            message: error.message,
             success: false
         });
         return false;
@@ -1656,7 +1668,7 @@ async function importVariationChanges(message, sender, sendResponse) {
             content: ('Error Getting Current Experiment Status: ', error)
         });
         sendResponse({
-            message: error,
+            message: error.message,
             success: false
         });
         return false;
@@ -1687,7 +1699,7 @@ async function importVariationChanges(message, sender, sendResponse) {
             content: ('Error Posting Changes to Experiment: ', error)
         });
         sendResponse({
-            message: error,
+            message: error.message,
             success: false
         });
         return false;
@@ -1718,7 +1730,7 @@ async function deleteVariationChanges(message, sender, sendResponse) {
             content: 'Parsing Message Content: ' + error
         });
         sendResponse({
-            message: error,
+            message: error.message,
             success: false
         });
         return false;
@@ -1754,7 +1766,7 @@ async function deleteVariationChanges(message, sender, sendResponse) {
             content: ('Error Fetching Authorization: ', error)
         });
         sendResponse({
-            message: error,
+            message: error.message,
             success: false
         });
         return false;
@@ -1903,7 +1915,7 @@ async function deleteVariationChanges(message, sender, sendResponse) {
             content: ('Error Modifing Variaitons (Deleting Changes): ', error)
         });
         sendResponse({
-            message: error,
+            message: error.message,
             success: false
         });
         return false;
@@ -1938,7 +1950,7 @@ async function deleteVariationChanges(message, sender, sendResponse) {
             content: ('Error Getting Current Experiment Status: ', error)
         });
         sendResponse({
-            message: error,
+            message: error.message,
             success: false
         });
         return false;
@@ -1975,7 +1987,7 @@ async function deleteVariationChanges(message, sender, sendResponse) {
             content: ('Error Posting Changes to Experiment: ', error)
         });
         sendResponse({
-            message: error,
+            message: error.message,
             success: false
         });
         return false;
@@ -2019,7 +2031,7 @@ async function transferChanges(message, sender, sendResponse) {
             content: 'Parsing Message Content: ' + error
         });
         sendResponse({
-            message: error,
+            message: error.message,
             success: false
         });
         return false;
@@ -2055,7 +2067,7 @@ async function transferChanges(message, sender, sendResponse) {
             content: ('Error Fetching Authorization: ', error)
         });
         sendResponse({
-            message: error,
+            message: error.message,
             success: false
         });
         return false;
@@ -2174,7 +2186,7 @@ async function transferChanges(message, sender, sendResponse) {
             content: ('Error Getting Current Experiment Status: ', error)
         });
         sendResponse({
-            message: error,
+            message: error.message,
             success: false
         });
         return false;
@@ -2202,7 +2214,7 @@ async function transferChanges(message, sender, sendResponse) {
             content: ('Error Changing Experiment Targeting: ', error)
         });
         sendResponse({
-            message: error,
+            message: error.message,
             success: false
         });
         return false;
@@ -2280,7 +2292,7 @@ async function transferChanges(message, sender, sendResponse) {
             content: ('Error Modifying Config Variations: ', error)
         });
         sendResponse({
-            message: error,
+            message: error.message,
             success: false
         });
         return false;
@@ -2318,7 +2330,7 @@ async function transferChanges(message, sender, sendResponse) {
             content: ('Error Transfering Experiment Changes: ', error)
         });
         sendResponse({
-            message: error,
+            message: error.message,
             success: false
         });
         return false;

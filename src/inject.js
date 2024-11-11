@@ -91,6 +91,12 @@ function getPendingSetPages() {
 }
 
 function createErrorPopup(message) {
+
+    window.optimizelyUIExtended.log({
+        type: 'error',
+        content: message
+    });
+
     var backgroundBlur = document.createElement('div');
     backgroundBlur.classList.add('page-overlay', 'page-overlay--faint');
     backgroundBlur.style.zIndex = '2999';
@@ -783,13 +789,14 @@ var enabledFeatures = new Promise((resolve, reject) => {
                     //is only created if the create changes button is disabled
                     if (document.querySelector('[data-test-section="create-change-button"]').classList.contains('lego-button--disabled')) {
                         window.optimizelyUIExtended.observeElementChanges('[data-test-section="create-change-button"]', (element, observer) => {
-                            if (element.classList.contains('lego-button--disabled')) {
-                                //do nothing
+                            if (element.classList.contains('lego-button--disabled') && !document.getElementById('optimizelyExtended-importChangesButton').classList.contains('lego-button--disabled')) {
+                                document.getElementById('optimizelyExtended-importChangesButton').classList.remove('lego-button--disabled');
+                                document.getElementById('optimizelyExtended-importChangesButton').style.pointerEvents = 'auto';
                             }
-                            else {
-                                importChangesButton.classList.remove('lego-button--disabled');
-                                importChangesButton.style.pointerEvents = 'auto';
-                                observer.disconnect(); // Disconnect the observer after it fires
+                            else if (!element.classList.contains('lego-button--disabled') && document.getElementById('optimizelyExtended-importChangesButton').classList.contains('lego-button--disabled') && !document.getElementById('optimizelyExtended-importChangesButton').classList.contains('optimizelyExtended-importChangesButton-disabled')) {
+                                document.getElementById('optimizelyExtended-importChangesButton').classList.remove('lego-button--disabled');
+                                document.getElementById('optimizelyExtended-importChangesButton').style.pointerEvents = 'auto';
+                                //observer.disconnect(); // Disconnect the observer after it fires
                             }
                         });
                     }
@@ -1020,6 +1027,8 @@ var enabledFeatures = new Promise((resolve, reject) => {
                         //has to be done manually since element.disable=true doesn't for this UI button style
                         event.target.classList.add('lego-button--disabled');
                         event.target.style.pointerEvents = 'none';
+                        //marking the button as disabled
+                        event.target.classList.add('optimizelyExtended-importChangesButton-disabled');
 
                         //asking the user to upload a file
                         // creating a file input element
@@ -1036,7 +1045,12 @@ var enabledFeatures = new Promise((resolve, reject) => {
                                     const jsonContent = JSON.parse(e.target.result);
                                     // store the parsed json content in a local variable
                                     var importedChanges = jsonContent;
-                                    console.log('[Optimizely UI Extended Extension]', importedChanges);
+                                    
+                                    window.optimizelyUIExtended.log({
+                                        type: 'debug',
+                                        content: (importedChanges)
+                                    });
+
 
                                     //adding popup to indicate that changes are being imported
                                     createInfoPopup(
@@ -1168,8 +1182,9 @@ var enabledFeatures = new Promise((resolve, reject) => {
                                                 //this is the function that will be called if the user closes the dialog
                                                 var closeFunction = function () {
                                                     //reenabling the import changes button
-                                                    event.target.classList.remove('lego-button--disabled');
-                                                    event.target.style.pointerEvents = 'auto';
+                                                    document.getElementById('optimizelyExtended-importChangesButton').classList.remove('lego-button--disabled');
+                                                    document.getElementById('optimizelyExtended-importChangesButton').style.pointerEvents = 'auto';
+                                                    document.getElementById('optimizelyExtended-importChangesButton').classList.add('optimizelyExtended-importChangesButton-disabled');
                                                     //removing the popup
                                                     dialogManager.classList.add('modal--full')
                                                     dialogManager.innerHTML = '';
