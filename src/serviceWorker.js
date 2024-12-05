@@ -1681,8 +1681,19 @@ async function importVariationChanges(message, sender, sendResponse) {
             content: ('Finding Page ID to Import Changes by matching via ' + message.type.split('-')[1] + ' based on: ', matchContent)
         });
 
+        // checking if Experiment is using URL Targeting or Page ID Targeting
+
+        var pageIDs = [];
+
+        if(experimentConfig.page_ids) {
+            pageIDs = await findPageIDs(experimentConfig, variationID, message.type.split('-')[1], matchContent, useScrape ? authorization.scraped : authorization.stored);
+        }
+        else {
+            pageIDs = [experimentConfig.url_targeting.page_id];
+        }
+
         //getting page ID(s) where the changes will be imported
-        var pageIDs = await findPageIDs(experimentConfig, variationID, message.type.split('-')[1], matchContent, useScrape ? authorization.scraped : authorization.stored);
+        
     } catch (error) {
         log({
             type: 'error',
@@ -1727,6 +1738,16 @@ async function importVariationChanges(message, sender, sendResponse) {
                 }
             }
             if (appledChanges) {
+                break;
+            }
+            if (variation.variation_id === variationID && variation.actions.length === 0) {
+                for (const page_id of pageIDs) {
+                    variation.actions.push({
+                        page_id: page_id,
+                        changes: importedChanges
+                    });
+                }
+                appledChanges = true;
                 break;
             }
         }
