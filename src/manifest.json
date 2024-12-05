@@ -1,6 +1,6 @@
 {
     "name": "Optimizely UI Extended",
-    "version": "1.0",
+    "version": "1.0.1",
     "description": "Adds Additional UI Options in the Optimizely Web Experimentation Platform Web App.",
     "manifest_version": 3,
     "author": "Grant Matthews",
