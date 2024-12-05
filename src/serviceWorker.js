@@ -780,8 +780,11 @@ async function revertWebChanges(message, sender, sendResponse) {
                 propertyDict.project_id = parseInt(projectID, 10);;
 
                 //adding the current experiment status to the property dict
-                if (experimentConfig.status === 'not_started' || experimentConfig.status === 'paused') {
-                    propertyDict.status = 'pause';
+                if (experimentConfig.status === 'not_started'){
+                    currentStatus = 'publish';
+                }
+                else if(experimentConfig.status === 'paused') {
+                    currentStatus = 'pause';
                 }
                 else if (experimentConfig.status === 'running') {
                     propertyDict.status = 'resume';
@@ -1752,7 +1755,10 @@ async function importVariationChanges(message, sender, sendResponse) {
         });
 
         var currentStatus = '';
-        if (experimentConfig.status === 'not_started' || experimentConfig.status === 'paused') {
+        if (experimentConfig.status === 'not_started'){
+            currentStatus = 'publish';
+        }
+        else if(experimentConfig.status === 'paused') {
             currentStatus = 'pause';
         }
         else if (experimentConfig.status === 'running') {
@@ -2036,7 +2042,10 @@ async function deleteVariationChanges(message, sender, sendResponse) {
         });
 
         var currentStatus = '';
-        if (experimentConfig.status === 'not_started' || experimentConfig.status === 'paused') {
+        if (experimentConfig.status === 'not_started'){
+            currentStatus = 'publish';
+        }
+        else if(experimentConfig.status === 'paused') {
             currentStatus = 'pause';
         }
         else if (experimentConfig.status === 'running') {
@@ -2274,7 +2283,10 @@ async function transferChanges(message, sender, sendResponse) {
         });
 
         var currentStatus = '';
-        if (experimentConfig.status === 'not_started' || experimentConfig.status === 'paused') {
+        if (experimentConfig.status === 'not_started'){
+            currentStatus = 'publish';
+        }
+        else if(experimentConfig.status === 'paused') {
             currentStatus = 'pause';
         }
         else if (experimentConfig.status === 'running') {
