@@ -595,6 +595,8 @@ async function revertWebChanges(message, sender, sendResponse) {
 
             var [authorization, features] = await Promise.all([fetchAuthorizationFromStorage(), fetchFeaturesFromStorage()]);
 
+            features = features.object;
+
             if (authorization && features) {
                 log({
                     type: 'debug',
@@ -990,6 +992,8 @@ async function revertWebChanges(message, sender, sendResponse) {
 
             var [authorization, features] = await Promise.all([fetchAuthorizationFromStorage(), fetchFeaturesFromStorage()]);
 
+            features = features.object;
+
             if (authorization && features) {
                 log({
                     type: 'debug',
@@ -1242,6 +1246,8 @@ async function exportVariationChanges(message, sender, sendResponse) {
         });
 
         var [authorization, features] = await Promise.all([fetchAuthorizationFromStorage(), fetchFeaturesFromStorage()]);
+
+        features = features.object;
 
         if (authorization && features) {
             log({
@@ -1556,6 +1562,8 @@ async function importVariationChanges(message, sender, sendResponse) {
 
         var [authorization, features] = await Promise.all([fetchAuthorizationFromStorage(), fetchFeaturesFromStorage()]);
 
+        features = features.object;
+
         if (authorization && features) {
             log({
                 type: 'debug',
@@ -1844,6 +1852,8 @@ async function deleteVariationChanges(message, sender, sendResponse) {
         });
 
         var [authorization, features] = await Promise.all([fetchAuthorizationFromStorage(), fetchFeaturesFromStorage()]);
+
+        features = features.object;
 
         if (authorization && features) {
             log({
@@ -2145,6 +2155,8 @@ async function transferChanges(message, sender, sendResponse) {
         });
 
         var [authorization, features] = await Promise.all([fetchAuthorizationFromStorage(), fetchFeaturesFromStorage()]);
+
+        features = features.object;
 
         if (authorization && features) {
             log({
