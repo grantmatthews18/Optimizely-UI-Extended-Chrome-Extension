@@ -28,3 +28,54 @@
     max-height: 10vh;
     color: red  ;
 }
+
+.optimizelyUIExtended-name {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.optimizelyUIExtended-nameCopyButton {
+    position: absolute;
+    top: 0;
+    right: 0;
+    height: 2rem;
+    width: 2.25rem;
+    display: none;
+}
+
+.optimizelyUIExtended-nameCopyButton-colorGrey {
+    background-color: rgba(250, 250, 250, 1);
+}
+
+.optimizelyUIExtended-nameCopyButton-colorWhite {
+    background-color: rgba(255, 255, 255, 1);
+}
+
+.optimizelyUIExtended-nameCopyButton-backgroundBlur {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    right: 2.25rem;
+    width: 1.5rem;  
+}
+
+.optimizelyUIExtended-nameCopyButton-backgroundBlur-colorGrey {
+    background: linear-gradient(to left, rgba(250, 250, 250, 1), rgba(250, 250, 250, 0));
+}
+
+.optimizelyUIExtended-nameCopyButton-backgroundBlur-colorWhite {
+    background: linear-gradient(to left, rgba(255, 255, 255, 1), rgba(255, 255, 255, 0));
+}
+
+.optimizelyUIExtended-nameCopyButton-button{
+    position: absolute;
+    right: 0;
+    top: 0;
+}
+

@@ -1045,7 +1045,7 @@ var enabledFeatures = new Promise((resolve, reject) => {
                                     const jsonContent = JSON.parse(e.target.result);
                                     // store the parsed json content in a local variable
                                     var importedChanges = jsonContent;
-                                    
+
                                     window.optimizelyUIExtended.log({
                                         type: 'debug',
                                         content: (importedChanges)
@@ -1485,10 +1485,316 @@ var enabledFeatures = new Promise((resolve, reject) => {
         });
     }
 
-    if(enabledFeatures.logLevel){
+    if (enabledFeatures.copyNames) {
+        window.optimizelyUIExtended.log({
+            type: 'info',
+            content: 'Copy Names Feature Enabled'
+        });
+
+        // Project Name Copy Button
+        window.optimizelyUIExtended.observeElementChanges('[data-test-section="project-name"]', element => {
+
+            window.optimizelyUIExtended.log({
+                type: 'debug',
+                content: 'Project Page URL Matched'
+            });
+
+            const currentProjectID = window.location.href.match(/projects\/(\d+)/)[1];
+            const projectClass = Array.from(element.classList).find(cls => cls.startsWith('optimizelyUIExtended-projectID-'));
+            const classProjectID = projectClass ? projectClass.split('-')[2] : null;
+
+            if (currentProjectID == classProjectID && element.children.length > 1) {
+                return;
+            }
+
+            element.classList = '';
+            element.classList.add('epsilon');
+            element.classList.add('truncate');
+            element.classList.add('optimizelyUIExtended-projectID-' + currentProjectID);
+
+            var projectName = element.innerHTML;
+
+            element.innerHTML = `
+                    <div class="optimizelyUIExtended-name">${projectName}</div>
+                    <div class="optimizelyUIExtended-nameCopyButton optimizelyUIExtended-nameCopyButton-colorGrey">
+                        <div class="optimizelyUIExtended-nameCopyButton-backgroundBlur optimizelyUIExtended-nameCopyButton-backgroundBlur-colorGrey"></div>
+                        <div class="flex-self--end optimizelyUIExtended-nameCopyButton-button" style="display: inline;">
+                            <div class="" title="">
+                                <button class="oui-button oui-button--small oui-button--plain oui-button--default" type="button">
+                                    <svg aria-hidden="true" focusable="false" data-prefix="fal" data-icon="clipboard"
+                                        class="svg-inline--fa fa-clipboard axiom-icon axiom-icon--small fa-fw" role="img"
+                                        xmlns="http://www.w3.org/2000/svg" viewBox="0 0 384 512" color="hsla(241, 77%, 12%, 1)">
+                                        <path fill="currentColor"
+                                            d="M112 128h160C280.8 128 288 120.8 288 112S280.8 96 272 96h-24.88C252.6 86.55 256 75.72 256 64c0-35.35-28.65-64-64-64S128 28.65 128 64c0 11.72 3.379 22.55 8.877 32H112C103.2 96 96 103.2 96 112S103.2 128 112 128zM192 32c17.64 0 32 14.36 32 32s-14.36 32-32 32S160 81.64 160 64S174.4 32 192 32zM320 64c-8.844 0-16 7.156-16 16S311.2 96 320 96c17.64 0 32 14.34 32 32v320c0 17.66-14.36 32-32 32H64c-17.64 0-32-14.34-32-32V128c0-17.66 14.36-32 32-32c8.844 0 16-7.156 16-16S72.84 64 64 64C28.7 64 0 92.72 0 128v320c0 35.28 28.7 64 64 64h256c35.3 0 64-28.72 64-64V128C384 92.72 355.3 64 320 64z">
+                                        </path>
+                                    </svg>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                `
+
+            window.optimizelyUIExtended.log({
+                type: 'debug',
+                content: 'Inner HTML Changed'
+            });
+
+            // container style
+            element.style.position = 'relative';
+            element.style.width = '100%';
+            element.style.height = '2rem';
+
+            // name style
+            // add event listeners for mouseover and mouseout
+            element.addEventListener('mouseover', function () {
+                element.querySelector('.optimizelyUIExtended-nameCopyButton').style.display = 'block';
+            });
+            element.addEventListener('mouseout', function () {
+                element.querySelector('.optimizelyUIExtended-nameCopyButton').style.display = 'none';
+            });
+
+            // copy button style
+            if (enabledFeatures.copyNamesID) {
+                element.querySelector('.optimizelyUIExtended-nameCopyButton-button').addEventListener('click', function (event) {
+
+                    var projectName = document.querySelector('.optimizelyUIExtended-name').innerHTML;
+                    // copy the project name
+
+                    projectName = projectName + ' (' + window.location.href.match(/projects\/(\d+)/)[1] + ')';
+
+                    navigator.clipboard.writeText(projectName).then(function () {
+                        window.optimizelyUIExtended.log({
+                            type: 'info',
+                            content: 'Project Name Copied to Clipboard'
+                        });
+                    }, function (err) {
+                        window.optimizelyUIExtended.log({
+                            type: 'error',
+                            content: 'Failed to Copy Project Name to Clipboard'
+                        });
+                    });
+                });
+            }
+            else {
+                element.querySelector('.optimizelyUIExtended-nameCopyButton-button').addEventListener('click', function (event) {
+
+                    var projectName = document.querySelector('.optimizelyUIExtended-name').innerHTML;
+                    // copy the project name to the clipboard
+
+                    navigator.clipboard.writeText(projectName).then(function () {
+                        window.optimizelyUIExtended.log({
+                            type: 'info',
+                            content: 'Project Name Copied to Clipboard'
+                        });
+                    }, function (err) {
+                        window.optimizelyUIExtended.log({
+                            type: 'error',
+                            content: 'Failed to Copy Project Name to Clipboard'
+                        });
+                    });
+                });
+            }
+
+        });
+
+        // Web AB Experiment Name Copy Button
+        //campaign
+        //experiments
+        //multivariate
+        window.optimizelyUIExtended.observeElementChanges('[data-test-section="header-title"]', element => {
+
+            if (/^https:\/\/app\.optimizely\.com\/v2\/projects\/\d+\/(experiments|multivariate|campaigns)\/\d+(\/\w+)?$/.test(window.location.href)) {
+                window.optimizelyUIExtended.log({
+                    type: 'debug',
+                    content: 'Experiment Page URL Matched'
+                });
+
+                if (element.classList.contains('optimizelyUIExtended-modified')) {
+                    return;
+                }
+
+                element.classList.add('optimizelyUIExtended-modified');
+
+                var experimentName = element.innerHTML;
+
+                element = element.parentElement;
+
+                element.innerHTML = `
+                    <h4 class="optimizelyUIExtended-name sidenav__header__title flush--bottom force-break gamma">${experimentName}</h4>
+                    <div class="optimizelyUIExtended-nameCopyButton optimizelyUIExtended-nameCopyButton-colorWhite">
+                        <div class="optimizelyUIExtended-nameCopyButton-backgroundBlur optimizelyUIExtended-nameCopyButton-backgroundBlur-colorWhite"></div>
+                        <div class="flex-self--end optimizelyUIExtended-nameCopyButton-button" style="display: inline;">
+                            <div class="" title="">
+                                <button class="oui-button oui-button--small oui-button--plain oui-button--default" type="button">
+                                    <svg aria-hidden="true" focusable="false" data-prefix="fal" data-icon="clipboard"
+                                        class="svg-inline--fa fa-clipboard axiom-icon axiom-icon--small fa-fw" role="img"
+                                        xmlns="http://www.w3.org/2000/svg" viewBox="0 0 384 512" color="hsla(241, 77%, 12%, 1)">
+                                        <path fill="currentColor"
+                                            d="M112 128h160C280.8 128 288 120.8 288 112S280.8 96 272 96h-24.88C252.6 86.55 256 75.72 256 64c0-35.35-28.65-64-64-64S128 28.65 128 64c0 11.72 3.379 22.55 8.877 32H112C103.2 96 96 103.2 96 112S103.2 128 112 128zM192 32c17.64 0 32 14.36 32 32s-14.36 32-32 32S160 81.64 160 64S174.4 32 192 32zM320 64c-8.844 0-16 7.156-16 16S311.2 96 320 96c17.64 0 32 14.34 32 32v320c0 17.66-14.36 32-32 32H64c-17.64 0-32-14.34-32-32V128c0-17.66 14.36-32 32-32c8.844 0 16-7.156 16-16S72.84 64 64 64C28.7 64 0 92.72 0 128v320c0 35.28 28.7 64 64 64h256c35.3 0 64-28.72 64-64V128C384 92.72 355.3 64 320 64z">
+                                        </path>
+                                    </svg>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                `
+                // container style
+                element.style.position = 'relative';
+                element.style.width = '100%';
+                if (element.children[0].scrollWidth > element.children[0].clientWidth) {
+                    element.style.height = '4rem';
+                    element.children[0].style.whiteSpace = 'normal';
+                    element.children[1].style.height = '4rem';
+                    element.children[1].children[1].style.top = '1rem';
+                }
+                else {
+                    element.style.height = '2rem';
+                }
+
+                // name style
+                // add event listeners for mouseover and mouseout
+                element.addEventListener('mouseover', function () {
+                    element.querySelector('.optimizelyUIExtended-nameCopyButton').style.display = 'block';
+                });
+                element.addEventListener('mouseout', function () {
+                    element.querySelector('.optimizelyUIExtended-nameCopyButton').style.display = 'none';
+                });
+
+                // copy button style
+                if (enabledFeatures.copyNamesID) {
+                    element.querySelector('.optimizelyUIExtended-nameCopyButton-button').addEventListener('click', function (event) {
+
+                        var experimentName = document.querySelector('.optimizelyUIExtended-name').innerHTML;
+                        // copy the experiment name
+
+                        experimentName = experimentName + ' (' + window.location.href.match(/(experiments|multivariate|campaigns)\/(\d+)/)[2] + ')';
+
+                        navigator.clipboard.writeText(experimentName).then(function () {
+                            window.optimizelyUIExtended.log({
+                                type: 'info',
+                                content: 'Experiment Name Copied to Clipboard'
+                            });
+                        }, function (err) {
+                            window.optimizelyUIExtended.log({
+                                type: 'error',
+                                content: 'Failed to Copy Experiment Name to Clipboard'
+                            });
+                        });
+                    });
+                }
+                else {
+                    element.querySelector('.optimizelyUIExtended-nameCopyButton-button').addEventListener('click', function (event) {
+
+                        var experimentName = document.querySelector('.optimizelyUIExtended-name').innerHTML;
+                        // copy the experiment name to the clipboard
+
+                        navigator.clipboard.writeText(experimentName).then(function () {
+                            window.optimizelyUIExtended.log({
+                                type: 'info',
+                                content: 'Experiment Name Copied to Clipboard'
+                            });
+                        }, function (err) {
+                            window.optimizelyUIExtended.log({
+                                type: 'error',
+                                content: 'Failed to Copy Experiment Name to Clipboard'
+                            });
+                        });
+                    });
+                }
+            }
+        });
+
+        // FX Feature Name Copy Button
+        window.optimizelyUIExtended.observeElementChanges('[data-test-section="header-title"]', element => {
+            if (/^https:\/\/app\.optimizely\.com\/v2\/projects\/\d+\/flags\/manage\/.*$/.test(window.location.href)) {
+
+                window.optimizelyUIExtended.log({
+                    type: 'debug',
+                    content: 'Feature Page URL Matched'
+                });
+
+                if (element.classList.contains('optimizelyUIExtended-modified')) {
+                    return;
+                }
+
+                var featureName = element.innerHTML;
+
+                var parent = element.parentElement;
+
+                elementIndex = Array.from(parent.children).findIndex(child => child.matches('[data-test-section="header-title"]'));
+                parent.children[elementIndex] = document.createElement('div');
+                element = parent.children[elementIndex];
+
+                element.classList.add('optimizelyUIExtended-modified');
+
+                element.innerHTML = `
+                        <h4 class="optimizelyUIExtended-name sidenav__header__title flush--bottom force-break gamma">${featureName}</h4>
+                        <div class="optimizelyUIExtended-nameCopyButton optimizelyUIExtended-nameCopyButton-colorWhite">
+                            <div class="optimizelyUIExtended-nameCopyButton-backgroundBlur optimizelyUIExtended-nameCopyButton-backgroundBlur-colorWhite"></div>
+                            <div class="flex-self--end optimizelyUIExtended-nameCopyButton-button" style="display: inline;">
+                                <div class="" title="">
+                                    <button class="oui-button oui-button--small oui-button--plain oui-button--default" type="button">
+                                        <svg aria-hidden="true" focusable="false" data-prefix="fal" data-icon="clipboard"
+                                            class="svg-inline--fa fa-clipboard axiom-icon axiom-icon--small fa-fw" role="img"
+                                            xmlns="http://www.w3.org/2000/svg" viewBox="0 0 384 512" color="hsla(241, 77%, 12%, 1)">
+                                            <path fill="currentColor"
+                                                d="M112 128h160C280.8 128 288 120.8 288 112S280.8 96 272 96h-24.88C252.6 86.55 256 75.72 256 64c0-35.35-28.65-64-64-64S128 28.65 128 64c0 11.72 3.379 22.55 8.877 32H112C103.2 96 96 103.2 96 112S103.2 128 112 128zM192 32c17.64 0 32 14.36 32 32s-14.36 32-32 32S160 81.64 160 64S174.4 32 192 32zM320 64c-8.844 0-16 7.156-16 16S311.2 96 320 96c17.64 0 32 14.34 32 32v320c0 17.66-14.36 32-32 32H64c-17.64 0-32-14.34-32-32V128c0-17.66 14.36-32 32-32c8.844 0 16-7.156 16-16S72.84 64 64 64C28.7 64 0 92.72 0 128v320c0 35.28 28.7 64 64 64h256c35.3 0 64-28.72 64-64V128C384 92.72 355.3 64 320 64z">
+                                            </path>
+                                        </svg>
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                `
+
+                // container style
+                element.style.position = 'relative';
+                element.style.width = '100%';
+                if (element.children[0].scrollWidth > element.children[0].clientWidth) {
+                    element.style.height = '4rem';
+                    element.children[0].style.whiteSpace = 'normal';
+                    element.children[1].style.height = '4rem';
+                    element.children[1].children[1].style.top = '1rem';
+                }
+                else {
+                    element.style.height = '2rem';
+                }
+
+                // name style
+                // add event listeners for mouseover and mouseout
+                element.addEventListener('mouseover', function () {
+                    element.querySelector('.optimizelyUIExtended-nameCopyButton').style.display = 'block';
+                });
+                element.addEventListener('mouseout', function () {
+                    element.querySelector('.optimizelyUIExtended-nameCopyButton').style.display = 'none';
+                });
+
+                // copy button style
+                element.querySelector('.optimizelyUIExtended-nameCopyButton-button').addEventListener('click', function (event) {
+
+                    var featureName = document.querySelector('.optimizelyUIExtended-name').innerHTML;
+                    // copy the experiment name to the clipboard
+
+                    navigator.clipboard.writeText(featureName).then(function () {
+                        window.optimizelyUIExtended.log({
+                            type: 'info',
+                            content: 'Experiment Name Copied to Clipboard'
+                        });
+                    }, function (err) {
+                        window.optimizelyUIExtended.log({
+                            type: 'error',
+                            content: 'Failed to Copy Experiment Name to Clipboard'
+                        });
+                    });
+                });
+            }
+        });
+    }
+
+    if (enabledFeatures.logLevel) {
         window.optimizelyUIExtended.setLogLevel(enabledFeatures.logLevel);
     }
-    else{
+    else {
         console.error('Unable to Find Log Level in Local Storage');
     }
 
