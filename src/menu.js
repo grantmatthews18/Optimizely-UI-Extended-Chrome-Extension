@@ -35,6 +35,19 @@ document.addEventListener('DOMContentLoaded', (event) => {
             document.getElementById('transferChanges').checked = result.enabledFeatures.transferChanges;
             document.getElementById('revertChanges').checked = result.enabledFeatures.revertChanges;
             document.getElementById('prioritizeScrape').checked = result.enabledFeatures.prioritizeScrape;
+
+            document.getElementById('copyNames').checked = result.enabledFeatures.copyNames;
+            document.getElementById('copyNamesID').checked = result.enabledFeatures.copyNamesID;
+
+            if(!result.enabledFeatures.copyNames){
+                document.getElementById('copyNamesID').parentElement.classList.add('disabled');
+                document.getElementById('copyNamesID').disabled = true;
+            }
+            else if(result.enabledFeatures.copyNames){
+                document.getElementById('copyNamesID').parentElement.classList.remove('disabled');
+                document.getElementById('copyNamesID').disabled = false;
+            }
+
             document.getElementById('logLevel').value = result.enabledFeatures.logLevel;
 
             enabledFeatures = result.enabledFeatures;
@@ -56,6 +69,16 @@ document.addEventListener('DOMContentLoaded', (event) => {
     checkboxes.forEach((checkbox) => {
         checkbox.addEventListener('click', (event) => {
             enabledFeatures[event.target.id] = event.target.checked;
+
+            if(event.target.id === 'copyNames' && !event.target.checked){
+                document.getElementById('copyNamesID').parentElement.classList.add('disabled');
+                document.getElementById('copyNamesID').disabled = true;
+            }
+            else if (event.target.id === 'copyNames' && event.target.checked){
+                document.getElementById('copyNamesID').parentElement.classList.remove('disabled');
+                document.getElementById('copyNamesID').disabled = false;
+            }
+
             chrome.storage.local.set({ "enabledFeatures": enabledFeatures }, function () {
                 log({
                     type: 'info',
@@ -75,7 +98,7 @@ document.addEventListener('DOMContentLoaded', (event) => {
         });
     });
 
-    var foundAuthorization = new Promise((resolve, reject) => {
+    new Promise((resolve, reject) => {
         chrome.storage.local.get(['authorization-user'], function (result) {
             //true if authorization exists in session storage
             if (result['authorization-user']) {
