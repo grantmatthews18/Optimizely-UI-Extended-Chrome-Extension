@@ -2702,6 +2702,8 @@ chrome.storage.local.get(['enabledFeatures'], function (result) {
                     transferChanges: true,
                     importExportDeleteChanges: true,
                     revertChanges: true,
+                    copyNames: true,
+                    copyNamesID: true,
                     logLevel: 'error',
                     prioritizeScrape: false //this feature is disabled by default
                 }
