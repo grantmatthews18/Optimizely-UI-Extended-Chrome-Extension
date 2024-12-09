@@ -19,6 +19,16 @@
             justify-content: space-between;
             margin-bottom: 10px;
         }
+        .spacer-tab {
+            width: 25px;
+        }
+        .menu-item > label {
+            flex: 1 1 auto;
+        }
+        .disabled {
+            color: #ccc;
+            pointer-events: none;
+        }
         .important {
             color: red;
         }
@@ -38,16 +48,25 @@
         <p>Enable or Disable the injection of additional UI options in the Optimizely Experimentation Web App UI.</p>
         <p class="important" id="menu-error-box"></p>
         <div class="menu-item">
-            <label for="transferChanges">Import/Export/Delete Variation Changes</label>
+            <label>Import/Export/Delete Variation Changes</label>
             <input class="menu-checkbox" type="checkbox" id="importExportDeleteChanges">
         </div>
         <div class="menu-item">
-            <label for="feature2">Transfer URL Targeting Changes to Page Rule(s)</label>
+            <label>Transfer URL Targeting Changes to Page Rule(s)</label>
             <input class="menu-checkbox" type="checkbox" id="transferChanges">
         </div>
         <div class="menu-item">
-            <label for="revertChanges">[BETA] Revert to Previous Experiment State</label>
+            <label>[BETA] Revert to Previous Experiment State</label>
             <input class="menu-checkbox" type="checkbox" id="revertChanges">
+        </div>
+        <div class="menu-item">
+            <label>Easy Copy Project/Experiment Names</label>
+            <input class="menu-checkbox" type="checkbox" id="copyNames">
+        </div>
+        <div class="menu-item disabled">
+            <div class="spacer-tab"></div>
+            <label>Copy ID with Name</label>
+            <input class="menu-checkbox" type="checkbox" id="copyNamesID">
         </div>
         <hr style="border: 0; border-top: 1px solid #ccc; margin: 20px 0;">
         <div class="menu-item">
@@ -59,6 +78,7 @@
             <button id="updateTokenButton">Update Token</button>
         </div>
         <div class="menu-item">
+            <div class="spacer-tab"></div>
             <label for="prioritizeScrape">Prioritize Scraped Token over Set Token</label>
             <input class="menu-checkbox" type="checkbox" id="prioritizeScrape">
         </div>
@@ -74,7 +94,7 @@
                 <option value="off">Off</option>
             </select>
         </div>
-        <p class="important">Changes will take effect after refreshing the page.</p>
+        <p class="important">All Changes will take effect after refreshing the page.</p>
         <a href="https://github.com/grantmatthews18/Optimizely-UI-Extended-Chrome-Extension">GitHub Source Page</a>
     </div>
 
