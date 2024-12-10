@@ -1515,10 +1515,10 @@ var enabledFeatures = new Promise((resolve, reject) => {
             var projectName = element.innerHTML;
 
             element.innerHTML = `
-                    <div class="optimizelyUIExtended-name">${projectName}</div>
-                    <div class="optimizelyUIExtended-nameCopyButton optimizelyUIExtended-nameCopyButton-colorGrey">
+                    <div id="optimizelyUIExtended-projectName" class="optimizelyUIExtended-name">${projectName}</div>
+                    <div id="optimizelyUIExtended-projectCopyButton" class="optimizelyUIExtended-nameCopyButton optimizelyUIExtended-nameCopyButton-colorGrey">
                         <div class="optimizelyUIExtended-nameCopyButton-backgroundBlur optimizelyUIExtended-nameCopyButton-backgroundBlur-colorGrey"></div>
-                        <div class="flex-self--end optimizelyUIExtended-nameCopyButton-button" style="display: inline;">
+                        <div id="optimizelyUIExtended-projectCopyButton-button" class="flex-self--end optimizelyUIExtended-nameCopyButton-button" style="display: inline;">
                             <div class="" title="">
                                 <button class="oui-button oui-button--small oui-button--plain oui-button--default" type="button">
                                     <svg aria-hidden="true" focusable="false" data-prefix="fal" data-icon="clipboard"
@@ -1547,17 +1547,17 @@ var enabledFeatures = new Promise((resolve, reject) => {
             // name style
             // add event listeners for mouseover and mouseout
             element.addEventListener('mouseover', function () {
-                element.querySelector('.optimizelyUIExtended-nameCopyButton').style.display = 'block';
+                document.getElementById('optimizelyUIExtended-projectCopyButton').style.display = 'block';
             });
             element.addEventListener('mouseout', function () {
-                element.querySelector('.optimizelyUIExtended-nameCopyButton').style.display = 'none';
+                document.getElementById('optimizelyUIExtended-projectCopyButton').style.display = 'none';
             });
 
             // copy button style
             if (enabledFeatures.copyNamesID) {
-                element.querySelector('.optimizelyUIExtended-nameCopyButton-button').addEventListener('click', function (event) {
+                document.getElementById('optimizelyUIExtended-projectCopyButton-button').addEventListener('click', function (event) {
 
-                    var projectName = document.querySelector('.optimizelyUIExtended-name').innerHTML;
+                    var projectName = document.getElementById('optimizelyUIExtended-projectName').innerHTML;
                     // copy the project name
 
                     projectName = projectName + ' (' + window.location.href.match(/projects\/(\d+)/)[1] + ')';
@@ -1576,9 +1576,9 @@ var enabledFeatures = new Promise((resolve, reject) => {
                 });
             }
             else {
-                element.querySelector('.optimizelyUIExtended-nameCopyButton-button').addEventListener('click', function (event) {
+                document.getElementById('optimizelyUIExtended-projectCopyButton-button').addEventListener('click', function (event) {
 
-                    var projectName = document.querySelector('.optimizelyUIExtended-name').innerHTML;
+                    var projectName = document.getElementById('optimizelyUIExtended-projectName').innerHTML;
                     // copy the project name to the clipboard
 
                     navigator.clipboard.writeText(projectName).then(function () {
@@ -1620,10 +1620,10 @@ var enabledFeatures = new Promise((resolve, reject) => {
                 element = element.parentElement;
 
                 element.innerHTML = `
-                    <h4 class="optimizelyUIExtended-name sidenav__header__title flush--bottom force-break gamma">${experimentName}</h4>
-                    <div class="optimizelyUIExtended-nameCopyButton optimizelyUIExtended-nameCopyButton-colorWhite">
+                    <h4 id="optimizelyUIExtended-experimentName" class="optimizelyUIExtended-name sidenav__header__title flush--bottom force-break gamma">${experimentName}</h4>
+                    <div id="optimizelyUIExtended-experimentCopyButton" class="optimizelyUIExtended-nameCopyButton optimizelyUIExtended-nameCopyButton-colorWhite">
                         <div class="optimizelyUIExtended-nameCopyButton-backgroundBlur optimizelyUIExtended-nameCopyButton-backgroundBlur-colorWhite"></div>
-                        <div class="flex-self--end optimizelyUIExtended-nameCopyButton-button" style="display: inline;">
+                        <div id="optimizelyUIExtended-experimentCopyButton-button" class="flex-self--end optimizelyUIExtended-nameCopyButton-button" style="display: inline;">
                             <div class="" title="">
                                 <button class="oui-button oui-button--small oui-button--plain oui-button--default" type="button">
                                     <svg aria-hidden="true" focusable="false" data-prefix="fal" data-icon="clipboard"
@@ -1654,17 +1654,17 @@ var enabledFeatures = new Promise((resolve, reject) => {
                 // name style
                 // add event listeners for mouseover and mouseout
                 element.addEventListener('mouseover', function () {
-                    element.querySelector('.optimizelyUIExtended-nameCopyButton').style.display = 'block';
+                    document.getElementById('optimizelyUIExtended-experimentCopyButton').style.display = 'block';
                 });
                 element.addEventListener('mouseout', function () {
-                    element.querySelector('.optimizelyUIExtended-nameCopyButton').style.display = 'none';
+                    document.getElementById('optimizelyUIExtended-experimentCopyButton').style.display = 'none';
                 });
 
                 // copy button style
                 if (enabledFeatures.copyNamesID) {
-                    element.querySelector('.optimizelyUIExtended-nameCopyButton-button').addEventListener('click', function (event) {
+                    document.getElementById('optimizelyUIExtended-experimentCopyButton-button').addEventListener('click', function (event) {
 
-                        var experimentName = document.querySelector('.optimizelyUIExtended-name').innerHTML;
+                        var experimentName = document.getElementById('optimizelyUIExtended-experimentName').innerHTML;
                         // copy the experiment name
 
                         experimentName = experimentName + ' (' + window.location.href.match(/(experiments|multivariate|campaigns)\/(\d+)/)[2] + ')';
@@ -1683,9 +1683,9 @@ var enabledFeatures = new Promise((resolve, reject) => {
                     });
                 }
                 else {
-                    element.querySelector('.optimizelyUIExtended-nameCopyButton-button').addEventListener('click', function (event) {
+                    document.getElementById('optimizelyUIExtended-experimentCopyButton-button').addEventListener('click', function (event) {
 
-                        var experimentName = document.querySelector('.optimizelyUIExtended-name').innerHTML;
+                        var experimentName = document.getElementById('optimizelyUIExtended-experimentName').innerHTML;
                         // copy the experiment name to the clipboard
 
                         navigator.clipboard.writeText(experimentName).then(function () {
@@ -1728,10 +1728,10 @@ var enabledFeatures = new Promise((resolve, reject) => {
                 element.classList.add('optimizelyUIExtended-modified');
 
                 element.innerHTML = `
-                        <h4 class="optimizelyUIExtended-name sidenav__header__title flush--bottom force-break gamma">${featureName}</h4>
-                        <div class="optimizelyUIExtended-nameCopyButton optimizelyUIExtended-nameCopyButton-colorWhite">
+                        <h4 id="optimizelyUIExtended-featureName" class="optimizelyUIExtended-name sidenav__header__title flush--bottom force-break gamma">${featureName}</h4>
+                        <div id="optimizelyUIExtended-featureCopyButton" class="optimizelyUIExtended-nameCopyButton optimizelyUIExtended-nameCopyButton-colorWhite">
                             <div class="optimizelyUIExtended-nameCopyButton-backgroundBlur optimizelyUIExtended-nameCopyButton-backgroundBlur-colorWhite"></div>
-                            <div class="flex-self--end optimizelyUIExtended-nameCopyButton-button" style="display: inline;">
+                            <div id="optimizelyUIExtended-featureCopyButton-button" class="flex-self--end optimizelyUIExtended-nameCopyButton-button" style="display: inline;">
                                 <div class="" title="">
                                     <button class="oui-button oui-button--small oui-button--plain oui-button--default" type="button">
                                         <svg aria-hidden="true" focusable="false" data-prefix="fal" data-icon="clipboard"
@@ -1763,27 +1763,27 @@ var enabledFeatures = new Promise((resolve, reject) => {
                 // name style
                 // add event listeners for mouseover and mouseout
                 element.addEventListener('mouseover', function () {
-                    element.querySelector('.optimizelyUIExtended-nameCopyButton').style.display = 'block';
+                    document.getElementById('optimizelyUIExtended-featureCopyButton').style.display = 'block';
                 });
                 element.addEventListener('mouseout', function () {
-                    element.querySelector('.optimizelyUIExtended-nameCopyButton').style.display = 'none';
+                    document.getElementById('optimizelyUIExtended-featureCopyButton').style.display = 'none';
                 });
 
                 // copy button style
-                element.querySelector('.optimizelyUIExtended-nameCopyButton-button').addEventListener('click', function (event) {
+                document.getElementById('optimizelyUIExtended-featureCopyButton-button').addEventListener('click', function (event) {
 
-                    var featureName = document.querySelector('.optimizelyUIExtended-name').innerHTML;
+                    var featureName = document.getElementById('optimizelyUIExtended-featureName').innerHTML;
                     // copy the experiment name to the clipboard
 
                     navigator.clipboard.writeText(featureName).then(function () {
                         window.optimizelyUIExtended.log({
                             type: 'info',
-                            content: 'Experiment Name Copied to Clipboard'
+                            content: 'Feature Name Copied to Clipboard'
                         });
                     }, function (err) {
                         window.optimizelyUIExtended.log({
                             type: 'error',
-                            content: 'Failed to Copy Experiment Name to Clipboard'
+                            content: 'Failed to Copy Feature Name to Clipboard'
                         });
                     });
                 });
