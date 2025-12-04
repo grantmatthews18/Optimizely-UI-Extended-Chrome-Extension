@@ -35,6 +35,7 @@ document.addEventListener('DOMContentLoaded', (event) => {
             document.getElementById('transferChanges').checked = result.enabledFeatures.transferChanges;
             document.getElementById('revertChanges').checked = result.enabledFeatures.revertChanges;
             document.getElementById('prioritizeScrape').checked = result.enabledFeatures.prioritizeScrape;
+            document.getElementById('extractNewEditorLinks').checked = result.enabledFeatures.extractNewEditorLinks;
 
             document.getElementById('copyNames').checked = result.enabledFeatures.copyNames;
             document.getElementById('copyNamesID').checked = result.enabledFeatures.copyNamesID;

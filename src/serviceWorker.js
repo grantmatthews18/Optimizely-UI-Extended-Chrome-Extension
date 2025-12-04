@@ -15,7 +15,24 @@ function deepCopy(obj) {
         }
     }
     return copy;
-}
+};
+
+function arraysHaveSameValues(arr1, arr2) {
+    if (arr1.length !== arr2.length) {
+        return false;
+    }
+
+    const sortedArr1 = arr1.slice().sort();
+    const sortedArr2 = arr2.slice().sort();
+
+    for (let i = 0; i < sortedArr1.length; i++) {
+        if (sortedArr1[i] !== sortedArr2[i]) {
+            return false;
+        }
+    }
+
+    return true;
+};
 
 async function fetchFeaturesFromStorage() {
     try {
@@ -125,7 +142,19 @@ async function fetchWebHistory(experimentID, projectID, authorization) {
         let response = await fetch(baseURL + "&page=" + pageNum, requestOptions);
 
         if (response.status == 200) {
-            let result = response.json();
+            let result = await response.json();
+            log({
+                type: 'debug',
+                content: ('Fetched Page ' + pageNum + ' of Changes: ', result)
+            });
+            if(result.length <= 0){
+                if (pageNum == 1) {
+                    throw new Error("Failed to Fetch Experiment History");
+                }
+                else {
+                    break;
+                }
+            }
             changes = changes.concat(result);
             pageNum += 1;
         }
@@ -509,14 +538,17 @@ function revertWebChange(propertyDict, changeObj) {
             });
         }
         else if (change.property === 'page_ids' || change.property === 'url_targeting') {
+
+            //if targeting was changed, set flag in propertyDict
+            //we need to first update the changed targeting
+            propertyDict.targetingChanged = true;
+
             if (change.after && change.before) {
                 //change was an update, swap property to before
                 propertyDict[change.property] = change.before;
+                
             }
             else {
-                //change was switching from page IDs to URL targeting (or vice versa)
-                //first, clear all previous targeting updates from Q
-                propertyDict.targetingChanged = true;
 
                 if (change.after) {
                     //change was delete targeting type, set targeting type to nothing
@@ -781,21 +813,21 @@ async function revertWebChanges(message, sender, sendResponse) {
 
                 //adding the current experiment status to the property dict
                 if (experimentConfig.status === 'not_started'){
-                    currentStatus = 'publish';
+                    propertyDict.currentStatus = 'publish';
                 }
                 else if(experimentConfig.status === 'paused') {
-                    currentStatus = 'pause';
+                    propertyDict.currentStatus = 'pause';
                 }
                 else if (experimentConfig.status === 'running') {
-                    propertyDict.status = 'resume';
+                    propertyDict.currentSs=tatus = 'resume';
                 }
                 else {
-                    propertyDict.status = 'pause';
+                    propertyDict.currentStatus = 'pause';
                 }
 
                 log({
                     type: 'debug',
-                    content: 'Current Experiment Status: ' + propertyDict.status
+                    content: 'Current Experiment Status: ' + propertyDict.currentStatus
                 });
 
                 //handling simple properties
@@ -927,9 +959,40 @@ async function revertWebChanges(message, sender, sendResponse) {
             //reconstructing variations
             propertyDict.variations = reconstructWebVariationDict(propertyDict.variations);
 
+            propertyDict.variations.forEach((variation) => {
+                var pageIDs = [];
+                variation.actions.forEach((action) => {
+                    pageIDs.push(action.page_id);
+                });
+
+                if(propertyDict.url_targeting){
+                    if (!pageIDs.includes(propertyDict.url_targeting.page_id)) {
+                        variation.actions.push({
+                            page_id: propertyDict.url_targeting.page_id,
+                            changes: []
+                        });
+                    };
+                }
+                else{
+                    propertyDict.page_ids.forEach((pageID) => {
+                        if (!pageIDs.includes(pageID)) {
+                            variation.actions.push({
+                                page_id: pageID,
+                                changes: []
+                            });
+                        };
+                    });
+                }
+            });
+
             log({
                 type: 'debug',
                 content: 'Property Dict for Experiment ' + experimentID + 'Reconstructed'
+            });
+
+            log({
+                type: 'debug',
+                content: ('Reconstructed Property Dict: ', propertyDict)
             });
 
             chrome.tabs.sendMessage(tabId, {
@@ -965,13 +1028,14 @@ async function revertWebChanges(message, sender, sendResponse) {
             var experimentID = message.experimentID;
             var propertyDict = message.object;
 
-            var targetingChanged = propertyDict.targetingChanged;
+            var targetingChanged = deepCopy(propertyDict.targetingChanged);
             delete propertyDict.targetingChanged;
 
-            var experimentStatus = propertyDict.status;
+            var experimentStatus = deepCopy(propertyDict.currentStatus);
             delete propertyDict.status;
+            delete propertyDict.currentStatus;
 
-            var changeID = propertyDict.changeID;
+            var changeID = deepCopy(propertyDict.changeID);
             delete propertyDict.changeID;
 
         } catch (error) {
@@ -1097,6 +1161,11 @@ async function revertWebChanges(message, sender, sendResponse) {
                 }
                 else {
                     try {
+                        log({
+                            type: 'debug',
+                            content: 'Posting Changes to Experiment ' + experimentID + 'with action ' + experimentStatus
+                        });
+
                         await postWebChangeToExperiment({
                             experimentID: experimentID,
                             action: experimentStatus,
@@ -1526,14 +1595,14 @@ async function importVariationChanges(message, sender, sendResponse) {
         if (!Array.isArray(importedChanges)) {
             throw new Error('Imported changes should be an array');
         }
-        else {
-            importedChanges.forEach((change) => {
-                if (typeof change.async === 'undefined' || !change.attributes || !change.css || !change.dependencies || !change.id || !change.rearrange || !change.selector || !change.type) {
-                    console.log(change);
-                    throw new Error('Imported Changes Incorrectly Formated');
-                }
-            });
-        }
+        // else {
+        //     importedChanges.forEach((change) => {
+        //         if (typeof change.async === 'undefined' || !change.attributes || !change.css || !change.dependencies || !change.id || !change.rearrange || !change.selector || !change.type) {
+        //             console.log(change);
+        //             throw new Error('Imported Changes Incorrectly Formated');
+        //         }
+        //     });
+        // }
 
         log({
             type: 'debug',
@@ -2608,7 +2677,7 @@ chrome.webRequest.onBeforeSendHeaders.addListener((details) => {
                     //found authorziation does not match existing stored value. updating value
                     try {
                         //updating authorization in session storage
-                        chrome.storage.session.set({ "authorization": authorizationHeader.value }, function () {
+                        chrome.storage.session.set({ "authorizationScraped": authorizationHeader.value }, function () {
                             log({
                                 type: 'debug',
                                 content: 'Authorization Updated in Session Storage'

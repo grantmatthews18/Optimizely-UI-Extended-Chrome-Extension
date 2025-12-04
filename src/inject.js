@@ -530,6 +530,15 @@ var enabledFeatures = new Promise((resolve, reject) => {
         resolve(result.enabledFeatures);
     });
 }).then(enabledFeatures => {
+
+    // Set Log Level First
+    if (enabledFeatures.logLevel) {
+        window.optimizelyUIExtended.setLogLevel(enabledFeatures.logLevel);
+    }
+    else {
+        console.error('Unable to Find Log Level in Local Storage');
+    }
+
     //do feature enabling stuff
     if (enabledFeatures.transferChanges) {
         window.optimizelyUIExtended.log({
@@ -1485,6 +1494,118 @@ var enabledFeatures = new Promise((resolve, reject) => {
         });
     }
 
+    if (enabledFeatures.extractNewEditorLinks) {
+        window.optimizelyUIExtended.log({
+            type: 'info',
+            content: 'Capture New Editor Links Feature Enabled'
+        });
+
+        document.addEventListener('optimizelyUIExtended-URLCaptured', (event) => {
+            window.optimizelyUIExtended.capturedURL = event.detail.url;
+            window.optimizelyUIExtended.log({
+                type: 'info',
+                content: 'New Editor URL Captured: ' + window.optimizelyUIExtended.capturedURL
+            });
+
+        });
+
+
+        // Capture New Editor Links Feature
+        // Observe changes to the body to detect navigation to the new editor
+        window.optimizelyUIExtended.observeElementChanges('[data-test-section="variations-panel-table"]', (element) => {
+            window.optimizelyUIExtended.log({
+                type: 'debug',
+                content: 'Variations Panel Detected'
+            });
+
+            const editorLinks = document.querySelectorAll('[data-test-section*="variation-table-row-variations-live-"]');
+
+            for (let link of editorLinks) {
+
+                // Check if we've already added our listener to avoid duplicates
+                if (link.classList.contains('optimizelyExtended-newEditorListener')) {
+                    window.optimizelyUIExtended.log({
+                        type: 'debug',
+                        content: 'New Editor Listener Already Attached, Skipping...'
+                    });
+                    continue;
+                }
+
+                link.classList.add('optimizelyExtended-newEditorListener');
+                window.optimizelyUIExtended.log({
+                    type: 'debug',
+                    content: 'Attaching New Editor Link Listener'
+                });
+
+                link.addEventListener('click', (event) => {
+
+                    // event.preventDefault();
+                    // event.stopPropagation();
+                    // event.stopImmediatePropagation();
+
+                    clickedElement = event.target;
+                    clickedElement.disabled = true;
+
+                    window.optimizelyUIExtended.log({
+                        type: 'debug',
+                        content: 'Editor link click intercepted: ' + window.optimizelyUIExtended.capturedURL
+                    });
+
+                    const popup = `
+                        <div class="oui-pop--over" style="display: block; opacity: 1;">
+                            <div class="oui-pop--over__content">
+                                <button class="optimizelyUIExtended-openEditor oui-button oui-button--highlight oui-button--default" type="button" style="width: 140px; margin: 8px;">Open New Editor</button>
+                                <button class="optimizelyUIExtended-copyEditor oui-button oui-button--highlight oui-button--default" type="button" style="width: 140px; margin: 8px;">Copy Editor URL</button>
+                            </div>
+                        </div>
+                    `;
+
+                    const popupContainer = document.createElement('div');
+                    popupContainer.classList.add('optimizelyUIExtended-newEditorPopup');
+                    popupContainer.style.position = 'absolute';
+
+                    const rect = clickedElement.getBoundingClientRect();
+                    const distanceFromWindowEdge = window.innerWidth - rect.right + 8;
+                    // Use the distance for positioning
+                    popupContainer.style.right = distanceFromWindowEdge + 'px';
+
+                    popupContainer.style.top = 'calc(100%)';
+                    popupContainer.style.margin = '8px';
+                    popupContainer.style.width = '128px';
+                    popupContainer.style.height = '128px';
+                    popupContainer.style.zIndex = '9999';
+                    popupContainer.innerHTML = popup;
+
+                    // Add event listener for Open New Editor button
+                    popupContainer.querySelector('.optimizelyUIExtended-openEditor').addEventListener('click', () => {
+                        // Open the new editor in a new tab
+                        window.open(window.optimizelyUIExtended.capturedURL, '_blank');
+                        clickedElement.disabled = false;
+                        // Remove the popup
+                        popupContainer.remove();
+                    });
+
+                    // Add event listener for Copy Editor URL button
+                    popupContainer.querySelector('.optimizelyUIExtended-copyEditor').addEventListener('click', () => {
+                        // Copy the new editor URL to clipboard
+                        navigator.clipboard.writeText(window.optimizelyUIExtended.capturedURL).then(() => {
+
+                            clickedElement.disabled = false;
+
+                            popupContainer.remove();
+                        });
+                    });
+
+                    clickedElement.parentElement.parentElement.parentElement.style.position = 'relative';
+
+                    clickedElement.parentElement.parentElement.parentElement.appendChild(popupContainer);
+                });
+            }
+
+
+        });
+    }
+
     if (enabledFeatures.copyNames) {
         window.optimizelyUIExtended.log({
             type: 'info',
@@ -1789,13 +1910,6 @@ var enabledFeatures = new Promise((resolve, reject) => {
                 });
             }
         });
-    }
-
-    if (enabledFeatures.logLevel) {
-        window.optimizelyUIExtended.setLogLevel(enabledFeatures.logLevel);
-    }
-    else {
-        console.error('Unable to Find Log Level in Local Storage');
     }
 
     window.optimizelyUIExtended.log({
